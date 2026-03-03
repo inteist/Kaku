@@ -76,7 +76,12 @@ impl ColorPalette {
     fn apply_override(&self, color: SrgbaTuple) -> SrgbaTuple {
         // Convert to 8-bit RGB for comparison to avoid floating point precision issues
         let to_u8 = |f: f32| (f * 255.0).round() as u8;
-        let (r, g, b, _) = (to_u8(color.0), to_u8(color.1), to_u8(color.2), to_u8(color.3));
+        let (r, g, b, _) = (
+            to_u8(color.0),
+            to_u8(color.1),
+            to_u8(color.2),
+            to_u8(color.3),
+        );
 
         for (from, to) in &self.color_overrides {
             let (fr, fg, fb, _) = (to_u8(from.0), to_u8(from.1), to_u8(from.2), to_u8(from.3));
@@ -98,9 +103,7 @@ impl ColorPalette {
     pub fn resolve_bg(&self, color: ColorAttribute) -> SrgbaTuple {
         match color {
             ColorAttribute::Default => self.background,
-            ColorAttribute::PaletteIndex(idx) => {
-                self.apply_override(self.colors.0[idx as usize])
-            }
+            ColorAttribute::PaletteIndex(idx) => self.apply_override(self.colors.0[idx as usize]),
             ColorAttribute::TrueColorWithPaletteFallback(color, _)
             | ColorAttribute::TrueColorWithDefaultFallback(color) => {
                 self.apply_override(color.into())
