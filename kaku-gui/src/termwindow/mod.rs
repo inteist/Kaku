@@ -3740,6 +3740,14 @@ impl TermWindow {
         // perform below; here we allow the user to define an `open-uri` event
         // handler that can bypass the normal `open_url` functionality.
         if let Some(link) = self.current_highlight.as_ref().cloned() {
+            let uri = link.uri().to_string();
+            let is_file_uri = uri.starts_with("file://");
+            let resolved_path = if is_file_uri {
+                self.resolve_file_path(pane, &uri)
+            } else {
+                None
+            };
+
             let window = GuiWin::new(self);
             let pane = MuxPane(pane.pane_id());
 
@@ -3748,6 +3756,7 @@ impl TermWindow {
                 window: GuiWin,
                 pane: MuxPane,
                 link: String,
+                resolved_path: Option<PathBuf>,
             ) -> anyhow::Result<()> {
                 let default_click = match lua {
                     Some(lua) => {
@@ -3762,18 +3771,79 @@ impl TermWindow {
                     None => true,
                 };
                 if default_click {
-                    log::info!("clicking {}", link);
-                    wezterm_open_url::open_url(&link);
+                    if let Some(path) = resolved_path {
+                        if path.exists() {
+                            log::info!("Opening file path: {:?}", path);
+                            std::thread::spawn(move || {
+                                std::process::Command::new("/usr/bin/open")
+                                    .arg(&path)
+                                    .status()
+                                    .ok();
+                            });
+                        } else {
+                            log::warn!("File does not exist: {:?}", path);
+                        }
+                    } else {
+                        log::info!("clicking {}", link);
+                        wezterm_open_url::open_url(&link);
+                    }
                 }
                 Ok(())
             }
 
             promise::spawn::spawn(config::with_lua_config_on_main_thread(move |lua| {
-                open_uri(lua, window, pane, link.uri().to_string())
+                open_uri(lua, window, pane, uri, resolved_path)
             }))
             .detach();
         }
     }
+
+    fn resolve_file_path(&self, pane: &Arc<dyn Pane>, uri: &str) -> Option<PathBuf> {
+        let path_str = uri.strip_prefix("file://").unwrap_or(uri);
+        let (base_path, _line, _col) = Self::parse_file_location(path_str);
+
+        if base_path.starts_with('/') {
+            Some(PathBuf::from(&base_path))
+        } else if base_path.starts_with("~/") {
+            dirs_next::home_dir().map(|home| home.join(&base_path[2..]))
+        } else {
+            pane.get_current_working_dir(CachePolicy::AllowStale)
+                .and_then(|url| url.to_file_path().ok())
+                .map(|cwd| cwd.join(&base_path))
+        }
+    }
+
+    fn parse_file_location(path: &str) -> (String, Option<usize>, Option<usize>) {
+        let parts: Vec<&str> = path.rsplitn(3, ':').collect();
+
+        match parts.as_slice() {
+            [col_str, line_str, file_path]
+                if !col_str.is_empty()
+                    && !line_str.is_empty()
+                    && col_str.chars().all(|c| c.is_ascii_digit())
+                    && line_str.chars().all(|c| c.is_ascii_digit()) =>
+            {
+                (
+                    file_path.to_string(),
+                    line_str.parse().ok(),
+                    col_str.parse().ok(),
+                )
+            }
+            _ => {
+                let parts: Vec<&str> = path.rsplitn(2, ':').collect();
+                match parts.as_slice() {
+                    [line_str, file_path]
+                        if !line_str.is_empty()
+                            && line_str.chars().all(|c| c.is_ascii_digit()) =>
+                    {
+                        (file_path.to_string(), line_str.parse().ok(), None)
+                    }
+                    _ => (path.to_string(), None, None),
+                }
+            }
+        }
+    }
+
     fn close_current_pane(&mut self, confirm: bool) {
         let mux_window_id = self.mux_window_id;
         let mux = Mux::get();

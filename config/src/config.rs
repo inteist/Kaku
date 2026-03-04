@@ -1915,6 +1915,9 @@ pub fn default_hyperlink_rules() -> Vec<hyperlink::Rule> {
         hyperlink::Rule::new(hyperlink::GENERIC_HYPERLINK_PATTERN, "$0").unwrap(),
         // implicit mailto link
         hyperlink::Rule::new(r"\b\w+@[\w-]+(\.[\w-]+)+\b", "mailto:$0").unwrap(),
+        // File paths: must start with /, ~/ or ./
+        // Supports file:line and file:line:col formats
+        hyperlink::Rule::new(r"(?:~|\.)?/[^\s\)\]\}>]+", "file://$0").unwrap(),
     ]
 }
 
