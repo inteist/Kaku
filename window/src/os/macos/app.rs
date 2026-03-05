@@ -523,9 +523,7 @@ extern "C" fn screen_parameters_did_change(
     _sel: Sel,
     _notification: *mut Object,
 ) {
-    log::debug!(
-        "NSApplicationDidChangeScreenParametersNotification received, refreshing displays"
-    );
+    log::debug!("NSApplicationDidChangeScreenParametersNotification received, refreshing displays");
     refresh_all_window_contexts_after_display_change(
         "screen parameter change",
         DISPLAY_CHANGE_MAX_RETRIES,
