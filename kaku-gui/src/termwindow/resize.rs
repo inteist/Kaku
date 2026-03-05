@@ -43,8 +43,20 @@ impl super::TermWindow {
             return;
         }
         if self.dimensions == dimensions && self.window_state == window_state {
-            // It didn't really change
-            log::trace!("dimensions didn't change NOP!");
+            // Even if the geometry didn't change, live resize state transitions
+            // still matter for flushing deferred work.
+            let was_live_resizing = self.live_resizing;
+            self.live_resizing = live_resizing;
+
+            if was_live_resizing && !live_resizing {
+                if self.pending_config_reload_after_resize {
+                    self.pending_config_reload_after_resize = false;
+                    self.schedule_silent_config_reload(window);
+                }
+                self.emit_window_event("window-resized", None);
+            }
+
+            log::trace!("dimensions/window_state didn't change NOP!");
             return;
         }
         let last_state = self.window_state;
