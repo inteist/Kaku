@@ -18,8 +18,9 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
 APP_NAME="Kaku"
-APP_BUNDLE="dist/${APP_NAME}.app"
-DMG_PATH="dist/${APP_NAME}.dmg"
+OUT_DIR="${OUT_DIR:-dist}"
+APP_BUNDLE="${OUT_DIR}/${APP_NAME}.app"
+DMG_PATH="${OUT_DIR}/${APP_NAME}.dmg"
 
 STAPLE_ONLY=0
 for arg in "$@"; do
