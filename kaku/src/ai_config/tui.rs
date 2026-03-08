@@ -3603,8 +3603,14 @@ fn save_codex_field_at(path: &Path, field_key: &str, new_val: &str) -> anyhow::R
     let new_line = format!("{} = \"{}\"", toml_key, new_val);
 
     let mut found = false;
+    let mut in_top_level = true;
     for line in &mut lines {
-        if line.trim_start().starts_with(&target) {
+        let trimmed = line.trim_start();
+        // Entering a table section: [section] or [[array-of-tables]]
+        if trimmed.starts_with('[') {
+            in_top_level = false;
+        }
+        if in_top_level && trimmed.starts_with(&target) {
             if new_val == "—" || new_val.is_empty() {
                 *line = String::new();
             } else {
@@ -3648,8 +3654,14 @@ fn save_kimi_field_at(path: &Path, field_key: &str, new_val: &str) -> anyhow::Re
     let new_line = format!("{toml_key} = \"{new_val}\"");
 
     let mut found = false;
+    let mut in_top_level = true;
     for line in &mut lines {
-        if line.trim_start().starts_with(&target) {
+        let trimmed = line.trim_start();
+        // Entering a table section: [section] or [[array-of-tables]]
+        if trimmed.starts_with('[') {
+            in_top_level = false;
+        }
+        if in_top_level && trimmed.starts_with(&target) {
             if new_val == "—" || new_val.is_empty() {
                 *line = String::new();
             } else {

@@ -766,7 +766,6 @@ pub struct TermWindow {
     gl: Option<Rc<glium::backend::Context>>,
     webgpu: Option<Rc<WebGpuState>>,
     config_subscription: Option<config::ConfigSubscription>,
-    skip_config_reload_generation: Option<usize>,
     pending_config_reload_after_resize: bool,
     silent_reload_queued: bool,
 
@@ -1084,7 +1083,6 @@ impl TermWindow {
             last_frame_duration: Duration::ZERO,
             fps: 0.,
             config_subscription: None,
-            skip_config_reload_generation: None,
             pending_config_reload_after_resize: false,
             silent_reload_queued: false,
             os_parameters: None,
@@ -2230,11 +2228,6 @@ impl TermWindow {
     }
 
     pub fn config_was_reloaded(&mut self) {
-        if self.skip_config_reload_generation == Some(configuration().generation()) {
-            self.skip_config_reload_generation = None;
-            return;
-        }
-
         // Skip config reload during live resizing to avoid performance issues
         // when dragging the window. The reload will be processed after resize completes.
         if self.live_resizing {
@@ -2472,10 +2465,13 @@ impl TermWindow {
         // Config TUI signals that config file was just saved; reload immediately.
         // Only the window containing the signaling pane triggers reload to avoid
         // duplicate reloads when multiple windows are open.
+        // Note: config::reload() notifies subscribers, and each window reloads from
+        // that subscription path. We intentionally avoid calling
+        // config_was_reloaded_impl() directly here so this event only triggers one
+        // per-window reload, and we also avoid predicting the next generation value:
+        // failed reloads do not advance config generation.
         if Self::should_reload_config_for_user_var(&name, window_contains_pane) {
             config::reload();
-            self.config_was_reloaded_impl();
-            self.skip_config_reload_generation = Some(self.config.generation());
             return;
         }
 

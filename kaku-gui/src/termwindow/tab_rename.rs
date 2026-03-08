@@ -64,15 +64,17 @@ impl TabRenameModal {
             .get_tab(tab_id)
             .context("tab vanished before rename could start")?;
 
-        let mut value = Self::displayed_title(term_window, tab_id).unwrap_or_default();
-        if value.is_empty() {
-            value = tab.get_title();
-        }
+        // Use the raw tab title first to avoid capturing format-tab-title decorations
+        // (icons, indices, prefixes). Fall back to displayed title only if raw title is empty.
+        let mut value = tab.get_title();
         if value.is_empty() {
             value = tab
                 .get_active_pane()
                 .map(|pane| pane.get_title())
                 .unwrap_or_default();
+        }
+        if value.is_empty() {
+            value = Self::displayed_title(term_window, tab_id).unwrap_or_default();
         }
 
         let cursor = value.chars().count();
