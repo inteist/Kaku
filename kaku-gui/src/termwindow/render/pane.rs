@@ -1,6 +1,10 @@
 use crate::quad::{HeapQuadAllocator, QuadTrait, TripleLayerQuadAllocator};
 use crate::selection::SelectionRange;
 use crate::termwindow::box_model::*;
+use crate::termwindow::render::corners::{
+    BOTTOM_LEFT_ROUNDED_CORNER, BOTTOM_RIGHT_ROUNDED_CORNER, TOP_LEFT_ROUNDED_CORNER,
+    TOP_RIGHT_ROUNDED_CORNER,
+};
 use crate::termwindow::render::{
     same_hyperlink, CursorProperties, LineQuadCacheKey, LineQuadCacheValue, LineToEleShapeCacheKey,
     RenderScreenLineParams,
@@ -27,6 +31,122 @@ impl crate::TermWindow {
         self.ui_items.append(&mut ui_items);
         let gl_state = self.render_state.as_ref().unwrap();
         self.render_element(&computed, gl_state, None)
+    }
+
+    fn paint_scrollbar_thumb(
+        &self,
+        layers: &mut TripleLayerQuadAllocator,
+        x: usize,
+        y: usize,
+        width: usize,
+        height: usize,
+        color: LinearRgba,
+    ) -> anyhow::Result<()> {
+        if width == 0 || height == 0 {
+            return Ok(());
+        }
+
+        let radius = (width.min(height) / 4)
+            .clamp(2, 4)
+            .min(width / 2)
+            .min(height / 2);
+
+        if radius == 0 || width <= radius * 2 || height <= radius * 2 {
+            self.filled_rectangle(
+                layers,
+                2,
+                euclid::rect(x as f32, y as f32, width as f32, height as f32),
+                color,
+            )
+            .context("scrollbar thumb")?;
+            return Ok(());
+        }
+
+        let radius_f = radius as f32;
+        let inner_width = width.saturating_sub(radius * 2) as f32;
+        let inner_height = height.saturating_sub(radius * 2) as f32;
+
+        // Fill the center column and side columns first, then soften the
+        // corners with small rounded masks so the thumb feels intentional
+        // without turning into a capsule with circular endpoints.
+        self.filled_rectangle(
+            layers,
+            2,
+            euclid::rect((x + radius) as f32, y as f32, inner_width, height as f32),
+            color,
+        )
+        .context("scrollbar thumb center")?;
+
+        self.filled_rectangle(
+            layers,
+            2,
+            euclid::rect(x as f32, (y + radius) as f32, radius_f, inner_height),
+            color,
+        )
+        .context("scrollbar thumb left")?;
+
+        self.filled_rectangle(
+            layers,
+            2,
+            euclid::rect(
+                (x + width - radius) as f32,
+                (y + radius) as f32,
+                radius_f,
+                inner_height,
+            ),
+            color,
+        )
+        .context("scrollbar thumb right")?;
+
+        self.poly_quad(
+            layers,
+            2,
+            euclid::point2(x as f32, y as f32),
+            TOP_LEFT_ROUNDED_CORNER,
+            1,
+            euclid::size2(radius_f, radius_f),
+            color,
+        )
+        .context("scrollbar thumb top-left")?
+        .set_grayscale();
+
+        self.poly_quad(
+            layers,
+            2,
+            euclid::point2((x + width - radius) as f32, y as f32),
+            TOP_RIGHT_ROUNDED_CORNER,
+            1,
+            euclid::size2(radius_f, radius_f),
+            color,
+        )
+        .context("scrollbar thumb top-right")?
+        .set_grayscale();
+
+        self.poly_quad(
+            layers,
+            2,
+            euclid::point2(x as f32, (y + height - radius) as f32),
+            BOTTOM_LEFT_ROUNDED_CORNER,
+            1,
+            euclid::size2(radius_f, radius_f),
+            color,
+        )
+        .context("scrollbar thumb bottom-left")?
+        .set_grayscale();
+
+        self.poly_quad(
+            layers,
+            2,
+            euclid::point2((x + width - radius) as f32, (y + height - radius) as f32),
+            BOTTOM_RIGHT_ROUNDED_CORNER,
+            1,
+            euclid::size2(radius_f, radius_f),
+            color,
+        )
+        .context("scrollbar thumb bottom-right")?
+        .set_grayscale();
+
+        Ok(())
     }
 
     pub fn paint_pane(
@@ -238,66 +358,64 @@ impl crate::TermWindow {
         // changes to ScrollHit, mouse positioning, PositionedPane
         // and tab size calculation.
         if pos.is_active && self.show_scroll_bar {
-            let thumb_y_offset = top_bar_height as usize + border.top.get();
+            if let Some(track) = self.scrollbar_track_for_pane(&pos.pane) {
+                let info = ScrollHit::thumb(
+                    &*pos.pane,
+                    current_viewport,
+                    track.height,
+                    self.min_scroll_bar_height() as usize,
+                );
 
-            let min_height = self.min_scroll_bar_height();
+                if info.height > 0 {
+                    if let Some(alpha) = self.scrollbar_thumb_alpha(
+                        &pos.pane,
+                        track.x,
+                        track.top,
+                        track.width,
+                        track.height,
+                    ) {
+                        let abs_thumb_top = track.top + info.top;
+                        let thumb_size = info.height;
+                        let is_light = crate::termwindow::is_light_color(&palette.background);
+                        let thumb_color = if is_light {
+                            LinearRgba::with_components(0.20, 0.20, 0.22, alpha * 0.78)
+                        } else {
+                            LinearRgba::with_components(0.78, 0.78, 0.82, alpha * 0.68)
+                        };
 
-            let info = ScrollHit::thumb(
-                &*pos.pane,
-                current_viewport,
-                self.dimensions.pixel_height.saturating_sub(
-                    thumb_y_offset + border.bottom.get() + bottom_bar_height as usize,
-                ),
-                min_height as usize,
-            );
-            let abs_thumb_top = thumb_y_offset + info.top;
-            let thumb_size = info.height;
-            let color = palette.scrollbar_thumb.to_linear();
+                        self.ui_items.push(UIItem {
+                            x: track.x,
+                            width: track.width,
+                            y: track.top,
+                            height: info.top,
+                            item_type: UIItemType::AboveScrollThumb,
+                        });
+                        self.ui_items.push(UIItem {
+                            x: track.x,
+                            width: track.width,
+                            y: abs_thumb_top,
+                            height: thumb_size,
+                            item_type: UIItemType::ScrollThumb,
+                        });
+                        self.ui_items.push(UIItem {
+                            x: track.x,
+                            width: track.width,
+                            y: abs_thumb_top + thumb_size,
+                            height: track.height.saturating_sub(info.top + thumb_size),
+                            item_type: UIItemType::BelowScrollThumb,
+                        });
 
-            // Adjust the scrollbar thumb position
-            let config = &self.config;
-            let padding = self.effective_right_padding(&config) as f32;
-
-            let thumb_x = self.dimensions.pixel_width - padding as usize - border.right.get();
-
-            // Register the scroll bar location
-            self.ui_items.push(UIItem {
-                x: thumb_x,
-                width: padding as usize,
-                y: thumb_y_offset,
-                height: info.top,
-                item_type: UIItemType::AboveScrollThumb,
-            });
-            self.ui_items.push(UIItem {
-                x: thumb_x,
-                width: padding as usize,
-                y: abs_thumb_top,
-                height: thumb_size,
-                item_type: UIItemType::ScrollThumb,
-            });
-            self.ui_items.push(UIItem {
-                x: thumb_x,
-                width: padding as usize,
-                y: abs_thumb_top + thumb_size,
-                height: self
-                    .dimensions
-                    .pixel_height
-                    .saturating_sub(abs_thumb_top + thumb_size),
-                item_type: UIItemType::BelowScrollThumb,
-            });
-
-            self.filled_rectangle(
-                layers,
-                2,
-                euclid::rect(
-                    thumb_x as f32,
-                    abs_thumb_top as f32,
-                    padding,
-                    thumb_size as f32,
-                ),
-                color,
-            )
-            .context("filled_rectangle")?;
+                        self.paint_scrollbar_thumb(
+                            layers,
+                            track.thumb_x,
+                            abs_thumb_top,
+                            track.thumb_width,
+                            thumb_size,
+                            thumb_color,
+                        )?;
+                    }
+                }
+            }
         }
 
         let (selrange, rectangular) = {

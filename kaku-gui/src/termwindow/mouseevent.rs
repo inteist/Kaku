@@ -197,6 +197,7 @@ impl super::TermWindow {
         };
 
         self.current_mouse_event.replace(event.clone());
+        self.update_scrollbar_hovering(&pane, context);
         // Mouse interaction should cancel any synthetic prompt-selection state
         // tracked from keyboard shortcuts (Cmd+A/Shift+Arrow, etc).
         self.clear_line_editor_selection();
@@ -575,6 +576,7 @@ impl super::TermWindow {
 
     pub fn mouse_leave_impl(&mut self, context: &dyn WindowOps) {
         self.current_mouse_event = None;
+        self.scrollbar_hovering = false;
         self.update_title();
         context.set_cursor(Some(MouseCursor::Arrow));
         context.invalidate();
@@ -648,25 +650,15 @@ impl super::TermWindow {
         let dims = pane.get_dimensions();
         let current_viewport = self.get_viewport(pane.pane_id());
 
-        let tab_bar_height = if self.show_tab_bar {
-            self.tab_bar_pixel_height().unwrap_or(0.)
-        } else {
-            0.
+        let Some(track) = self.scrollbar_track_for_pane(&pane) else {
+            return;
         };
-        let (top_bar_height, bottom_bar_height) = if self.config.tab_bar_at_bottom {
-            (0.0, tab_bar_height)
-        } else {
-            (tab_bar_height, 0.0)
-        };
-
-        let border = self.get_os_border();
-        let y_offset = top_bar_height + border.top.get() as f32;
 
         let from_top = start_event.coords.y.saturating_sub(item.y as isize);
         let effective_thumb_top = event
             .coords
             .y
-            .saturating_sub(y_offset as isize + from_top)
+            .saturating_sub(track.top as isize + from_top)
             .max(0) as usize;
 
         // Convert thumb top into a row index by reversing the math
@@ -675,11 +667,10 @@ impl super::TermWindow {
             effective_thumb_top,
             &*pane,
             current_viewport,
-            self.dimensions.pixel_height.saturating_sub(
-                y_offset as usize + border.bottom.get() + bottom_bar_height as usize,
-            ),
+            track.height,
             self.min_scroll_bar_height() as usize,
         );
+        self.reveal_scrollbar();
         self.set_viewport(pane.pane_id(), Some(row), dims);
         context.invalidate();
         self.dragging.replace((item, start_event));
@@ -747,7 +738,7 @@ impl super::TermWindow {
         match event.kind {
             WMEK::Press(MousePress::Left) => {
                 log::debug!("Should close tab {}", idx);
-                self.close_specific_tab(idx, true);
+                self.close_specific_tab(idx, false);
             }
             _ => {}
         }
@@ -884,7 +875,7 @@ impl super::TermWindow {
             WMEK::Press(MousePress::Middle) => match item {
                 TabBarItem::Tab { tab_idx, .. } => {
                     self.tab_drag_state = None;
-                    self.close_specific_tab(tab_idx, true);
+                    self.close_specific_tab(tab_idx, false);
                 }
                 TabBarItem::NewTabButton { .. } => {
                     self.tab_drag_state = None;
@@ -950,6 +941,7 @@ impl super::TermWindow {
             let dims = pane.get_dimensions();
             let current_viewport = self.get_viewport(pane.pane_id());
             // Page up
+            self.reveal_scrollbar();
             self.set_viewport(
                 pane.pane_id(),
                 Some(
@@ -975,6 +967,7 @@ impl super::TermWindow {
             let dims = pane.get_dimensions();
             let current_viewport = self.get_viewport(pane.pane_id());
             // Page down
+            self.reveal_scrollbar();
             self.set_viewport(
                 pane.pane_id(),
                 Some(
@@ -1003,6 +996,7 @@ impl super::TermWindow {
         if let WMEK::Press(MousePress::Left) = event.kind {
             // Start a scroll drag
             // self.scroll_drag_start = Some(from_top);
+            self.reveal_scrollbar();
             self.dragging = Some((item, event));
         }
         context.set_cursor(Some(MouseCursor::Arrow));
