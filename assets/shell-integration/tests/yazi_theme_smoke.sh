@@ -27,6 +27,21 @@ run_setup() {
 	bash "$REPO_ROOT/assets/shell-integration/setup_zsh.sh" --update-only >/dev/null
 }
 
+expected_flavor="kaku-dark"
+
+expected_auto_flavor() {
+	if command -v defaults >/dev/null 2>&1; then
+		local appearance
+		appearance="$(defaults read -g AppleInterfaceStyle 2>/dev/null || true)"
+		if [[ "$appearance" != "Dark" ]]; then
+			printf '%s\n' "kaku-light"
+			return
+		fi
+	fi
+
+	printf '%s\n' "kaku-dark"
+}
+
 home_new="$tmp_dir/home-new"
 mkdir -p "$home_new"
 run_setup "$home_new"
@@ -41,8 +56,8 @@ wrapper_new="$home_new/.config/kaku/zsh/bin/yazi"
 [[ -f "$light_new" ]]
 [[ -x "$wrapper_new" ]]
 grep -Fq '[flavor]' "$theme_new"
-grep -Fq 'dark = "kaku-dark"' "$theme_new"
-grep -Fq 'light = "kaku-dark"' "$theme_new"
+grep -Fq "dark = \"$expected_flavor\"" "$theme_new"
+grep -Fq "light = \"$expected_flavor\"" "$theme_new"
 grep -Fq '{ url = "*/", fg = "#8cc2ff" }' "$dark_new"
 grep -Fq '{ url = "*/", fg = "#205ea6" }' "$light_new"
 
@@ -90,8 +105,24 @@ theme_static="$home_static/.config/yazi/theme.toml"
 grep -Fq '[flavor]' "$theme_static"
 ! grep -Fq '# Kaku-aligned theme for Yazi 26.x' "$theme_static"
 ! grep -Fq 'overall = { bg = "#15141b" }' "$theme_static"
-grep -Fq 'dark = "kaku-dark"' "$theme_static"
-grep -Fq 'light = "kaku-dark"' "$theme_static"
+grep -Fq "dark = \"$expected_flavor\"" "$theme_static"
+grep -Fq "light = \"$expected_flavor\"" "$theme_static"
+
+home_auto="$tmp_dir/home-auto"
+mkdir -p "$home_auto/.config/kaku"
+cat <<'EOF' >"$home_auto/.config/kaku/kaku.lua"
+local wezterm = require 'wezterm'
+local config = wezterm.config_builder()
+config.color_scheme = 'Auto'
+return config
+EOF
+
+run_setup "$home_auto"
+
+theme_auto="$home_auto/.config/yazi/theme.toml"
+auto_flavor="$(expected_auto_flavor)"
+grep -Fq "dark = \"$auto_flavor\"" "$theme_auto"
+grep -Fq "light = \"$auto_flavor\"" "$theme_auto"
 
 home_light="$tmp_dir/home-light"
 mkdir -p "$home_light/.config/kaku"

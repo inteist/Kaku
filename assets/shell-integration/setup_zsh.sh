@@ -96,12 +96,7 @@ backup_zshrc_once() {
 }
 
 current_kaku_yazi_flavor() {
-	local config_file="$HOME/.config/kaku/kaku.lua"
-	if [[ -f "$config_file" ]] && grep -Eq "^config\.color_scheme[[:space:]]*=[[:space:]]*['\"]Kaku Light['\"]" "$config_file"; then
-		printf '%s\n' "kaku-light"
-	else
-		printf '%s\n' "kaku-dark"
-	fi
+	resolve_kaku_flavor_from_config "$HOME/.config/kaku/kaku.lua"
 }
 
 kaku_yazi_theme_block() {
@@ -214,12 +209,58 @@ MARKER_END="# ===== End Kaku Yazi Flavor (managed) ====="
 WRAPPER_PATH="${BASH_SOURCE[0]}"
 WRAPPER_DIR="$(cd "$(dirname "$WRAPPER_PATH")" && pwd)"
 
-current_flavor() {
-	if [[ -f "$KAKU_CONFIG_FILE" ]] && grep -Eq "^config\.color_scheme[[:space:]]*=[[:space:]]*['\"]Kaku Light['\"]" "$KAKU_CONFIG_FILE"; then
-		printf '%s\n' "kaku-light"
-	else
-		printf '%s\n' "kaku-dark"
+system_kaku_flavor() {
+	local flavor="kaku-dark"
+	if command -v defaults >/dev/null 2>&1; then
+		local appearance
+		appearance="$(defaults read -g AppleInterfaceStyle 2>/dev/null || true)"
+		if [[ "$appearance" != "Dark" ]]; then
+			flavor="kaku-light"
+		fi
 	fi
+	printf '%s\n' "$flavor"
+}
+
+resolve_kaku_flavor_from_config() {
+	local config_file="$1"
+	local system_flavor
+	system_flavor="$(system_kaku_flavor)"
+
+	if [[ -f "$config_file" ]]; then
+		local scheme_line
+		scheme_line="$(
+			awk '
+				/^[[:space:]]*--/ { next }
+				/^[[:space:]]*config\.color_scheme[[:space:]]*=/ { print; exit }
+			' "$config_file"
+		)"
+		if [[ -n "$scheme_line" ]]; then
+			if [[ "$scheme_line" =~ ^[[:space:]]*config\.color_scheme[[:space:]]*=[[:space:]]*['\"]Kaku\ Light['\"] ]]; then
+				printf '%s\n' "kaku-light"
+				return
+			fi
+			if [[ "$scheme_line" =~ ^[[:space:]]*config\.color_scheme[[:space:]]*=[[:space:]]*['\"](Kaku\ Dark|Kaku\ Theme)['\"] ]]; then
+				printf '%s\n' "kaku-dark"
+				return
+			fi
+			if [[ "$scheme_line" =~ ^[[:space:]]*config\.color_scheme[[:space:]]*=[[:space:]]*['\"]Auto['\"] ]]; then
+				printf '%s\n' "$system_flavor"
+				return
+			fi
+			if [[ "$scheme_line" == *get_appearance* ]]; then
+				printf '%s\n' "$system_flavor"
+				return
+			fi
+			printf '%s\n' "kaku-dark"
+			return
+		fi
+	fi
+
+	printf '%s\n' "kaku-dark"
+}
+
+current_flavor() {
+	resolve_kaku_flavor_from_config "$KAKU_CONFIG_FILE"
 }
 
 managed_block() {
