@@ -147,6 +147,11 @@ sync_kaku_yazi_flavors() {
 			continue
 		fi
 
+		if [[ ! -f "$source_dir/flavor.toml" ]]; then
+			echo -e "${YELLOW}Warning: flavor.toml missing in $source_dir.${NC}"
+			continue
+		fi
+
 		mkdir -p "$target_dir"
 		cp "$source_dir/flavor.toml" "$target_dir/flavor.toml"
 	done
@@ -617,7 +622,7 @@ fi
 
 # Enable color output for ls
 export CLICOLOR=1
-export LSCOLORS="Gxfxcxdxbxegedabagacad"
+export LSCOLORS="gxfxcxdxbxegedabagacad"
 
 # Smart History Configuration
 HISTSIZE="\${HISTSIZE:-50000}"

@@ -111,14 +111,20 @@ fn parse_editor_command(raw: &str) -> anyhow::Result<(String, Vec<String>)> {
 }
 
 fn try_vscode(path: &Path) -> anyhow::Result<bool> {
-    const VSCODE_CANDIDATES: &[&str] = &[
-        "code",
-        "/usr/local/bin/code",
-        "/opt/homebrew/bin/code",
-        "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code",
+    let mut candidates = vec![
+        "code".to_string(),
+        "/usr/local/bin/code".to_string(),
+        "/opt/homebrew/bin/code".to_string(),
+        "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code".to_string(),
     ];
 
-    for candidate in VSCODE_CANDIDATES {
+    if let Some(home) = std::env::var_os("HOME") {
+        let mut remote_candidate = std::path::PathBuf::from(home);
+        remote_candidate.push(".vscode/bin/code");
+        candidates.push(remote_candidate.to_string_lossy().into_owned());
+    }
+
+    for candidate in &candidates {
         match run_editor_command(candidate, &["-g".to_string()], path) {
             Ok(()) => return Ok(true),
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
