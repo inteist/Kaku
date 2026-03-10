@@ -76,7 +76,7 @@ local function is_bundled_kaku_config_path(path)
 
   local normalized = path:gsub('\\', '/')
   return normalized:match('/Kaku%.app/Contents/Resources/kaku%.lua$') ~= nil
-    or normalized:match('/assets/macos/Kaku%.app/Contents/Resources/kaku%.lua$') ~= nil
+      or normalized:match('/assets/macos/Kaku%.app/Contents/Resources/kaku%.lua$') ~= nil
 end
 
 -- Detect if user has custom config overrides in their config file.
@@ -171,9 +171,9 @@ local function is_low_resolution_screen()
     -- Inline builtin screen detection.
     local name = string.lower(tostring(main.name or ''))
     local is_builtin = name == 'color lcd'
-      or string.find(name, 'built-in', 1, true)
-      or string.find(name, 'built in', 1, true)
-      or string.find(name, '内建', 1, true)
+        or string.find(name, 'built-in', 1, true)
+        or string.find(name, 'built in', 1, true)
+        or string.find(name, '内建', 1, true)
     if short_edge > 0 then
       if is_builtin then
         return short_edge <= 1700
@@ -189,9 +189,9 @@ local low_resolution_screen = is_low_resolution_screen()
 
 local function get_default_padding()
   if low_resolution_screen then
-    return { left = '26px', right = '26px', top = '26px', bottom = '0px' }
+    return { left = '2cell', right = '2cell', top = '2cell', bottom = '0px' }
   end
-  return { left = '40px', right = '40px', top = '40px', bottom = '0px' }
+  return { left = '2cell', right = '2cell', top = '2cell', bottom = '0px' }
 end
 
 -- get_fullscreen_padding and get_yazi_fullscreen_padding have been removed.
@@ -256,8 +256,8 @@ local function update_window_config(window, is_full_screen, _pane)
   local alignment_needs_update = overrides.window_content_alignment ~= nil
 
   needs_update = padding_needs_update
-    or tab_bar_needs_update
-    or alignment_needs_update
+      or tab_bar_needs_update
+      or alignment_needs_update
 
   -- Skip update if dimensions changed rapidly (within 1 second) and state is stable
   -- This prevents padding flicker during fullscreen animation
@@ -774,7 +774,8 @@ local function build_ai_fix_messages(failed_command, exit_code, cwd, git_branch)
   return {
     {
       role = "system",
-      content = "You are a shell troubleshooting assistant. Output English only and return exactly one JSON object with keys summary, command, why, confidence. Do not use markdown or code fences. summary must be one concise sentence <= 72 chars and must not contain parentheses. command must be a single direct fix command without commentary. Avoid diagnostic-only commands, alias probing, and placeholders. Never use aliases like ll. If you are not confident about a direct fix, set command to an empty string.",
+      content =
+      "You are a shell troubleshooting assistant. Output English only and return exactly one JSON object with keys summary, command, why, confidence. Do not use markdown or code fences. summary must be one concise sentence <= 72 chars and must not contain parentheses. command must be a single direct fix command without commentary. Avoid diagnostic-only commands, alias probing, and placeholders. Never use aliases like ll. If you are not confident about a direct fix, set command to an empty string.",
     },
     {
       role = "user",
@@ -1093,13 +1094,13 @@ local function should_skip_ai_fix_for_failed_command(failed_command, exit_code)
   -- Avoid noisy suggestions for these common entry commands.
   local bare_cmd = lower:match("^([%w%._%-%/]+)%s*$")
   if bare_cmd and (
-      bare_cmd == "tnpm"
-      or bare_cmd == "npm"
-      or bare_cmd == "pnpm"
-      or bare_cmd == "yarn"
-      or bare_cmd == "pip"
-      or bare_cmd == "pip3"
-    ) then
+        bare_cmd == "tnpm"
+        or bare_cmd == "npm"
+        or bare_cmd == "pnpm"
+        or bare_cmd == "yarn"
+        or bare_cmd == "pip"
+        or bare_cmd == "pip3"
+      ) then
     return true
   end
 
@@ -1261,7 +1262,8 @@ local function poll_ai_fix_job(window, pane, pane_id, job, failed_command, exit_
 
   if status_code ~= 0 then
     clear_ai_fix_suggestion_state(pane_state)
-    ai_debug_log("ai_fix_job failed pane_id=" .. pane_id .. " status=" .. tostring(status_code) .. " err=" .. tostring(stderr))
+    ai_debug_log("ai_fix_job failed pane_id=" ..
+      pane_id .. " status=" .. tostring(status_code) .. " err=" .. tostring(stderr))
     inject_ai_status_and_finalize(pane, "Could not analyze this error right now.")
     return
   end
@@ -1791,26 +1793,26 @@ local function ssh_option_needs_value(token)
 
   local option = token:sub(2, 2)
   return option == "B"
-    or option == "b"
-    or option == "c"
-    or option == "D"
-    or option == "E"
-    or option == "e"
-    or option == "F"
-    or option == "I"
-    or option == "i"
-    or option == "J"
-    or option == "L"
-    or option == "l"
-    or option == "m"
-    or option == "O"
-    or option == "o"
-    or option == "p"
-    or option == "Q"
-    or option == "R"
-    or option == "S"
-    or option == "W"
-    or option == "w"
+      or option == "b"
+      or option == "c"
+      or option == "D"
+      or option == "E"
+      or option == "e"
+      or option == "F"
+      or option == "I"
+      or option == "i"
+      or option == "J"
+      or option == "L"
+      or option == "l"
+      or option == "m"
+      or option == "O"
+      or option == "o"
+      or option == "p"
+      or option == "Q"
+      or option == "R"
+      or option == "S"
+      or option == "W"
+      or option == "w"
 end
 
 local function normalize_ssh_target(target)
@@ -2179,7 +2181,8 @@ local function open_remote_files(window, pane)
     )
   end)
   if not open_ok then
-    show_remote_files_toast(window, "Failed to open Yazi: " .. trim_surrounding_whitespace(tostring(open_err or "")), 5000)
+    show_remote_files_toast(window, "Failed to open Yazi: " .. trim_surrounding_whitespace(tostring(open_err or "")),
+      5000)
   end
 end
 
@@ -2354,9 +2357,9 @@ local function tab_path_parts(tab)
     local runtime_cwd_ready = now >= runtime_cwd_warmup_until_secs
     local cached = active_tab_cwd_cache[pane_id]
     local should_refresh = (not cached)
-      or path == ''
-      or source_path ~= cached.source_path
-      or (now - cached.updated_at) >= active_tab_cwd_refresh_interval
+        or path == ''
+        or source_path ~= cached.source_path
+        or (now - cached.updated_at) >= active_tab_cwd_refresh_interval
 
     if should_refresh then
       local ok, runtime_cwd = pcall(function()
@@ -2713,8 +2716,8 @@ wezterm.on('update-right-status', function(window, pane)
   end
 
   local clock_icon = wezterm.nerdfonts.md_clock_time_four_outline
-    or wezterm.nerdfonts.md_clock_outline
-    or ''
+      or wezterm.nerdfonts.md_clock_outline
+      or ''
   local text = wezterm.strftime('%H:%M')
   if clock_icon ~= '' then
     window:set_right_status(wezterm.format({
@@ -2739,7 +2742,7 @@ local function build_font_config(is_light)
 
   local font = wezterm.font_with_fallback({
     { family = 'JetBrains Mono', weight = base_weight },
-    { family = 'PingFang SC', weight = base_weight },
+    { family = 'PingFang SC',    weight = base_weight },
     'Apple Color Emoji',
   })
 
@@ -2749,7 +2752,7 @@ local function build_font_config(is_light)
       intensity = 'Half',
       font = wezterm.font_with_fallback({
         { family = 'JetBrains Mono', weight = base_weight },
-        { family = 'PingFang SC', weight = base_weight },
+        { family = 'PingFang SC',    weight = base_weight },
       }),
     },
     -- Normal italic: disable real italics (keep upright)
@@ -2758,7 +2761,7 @@ local function build_font_config(is_light)
       italic = true,
       font = wezterm.font_with_fallback({
         { family = 'JetBrains Mono', weight = base_weight, italic = false },
-        { family = 'PingFang SC', weight = base_weight },
+        { family = 'PingFang SC',    weight = base_weight },
       }),
     },
     -- Bold: use heavier weight
@@ -2766,7 +2769,7 @@ local function build_font_config(is_light)
       intensity = 'Bold',
       font = wezterm.font_with_fallback({
         { family = 'JetBrains Mono', weight = bold_weight },
-        { family = 'PingFang SC', weight = bold_weight },
+        { family = 'PingFang SC',    weight = bold_weight },
       }),
     },
   }
@@ -2831,7 +2834,7 @@ wezterm.on('window-config-reloaded', function(window, pane)
   if user_has_custom_font or user_has_custom_font_rules then
     window_font_theme[window] = nil
     if window_has_managed_font_override[window]
-      and (overrides.font ~= nil or overrides.font_rules ~= nil) then
+        and (overrides.font ~= nil or overrides.font_rules ~= nil) then
       overrides.font = nil
       overrides.font_rules = nil
       window:set_config_overrides(overrides)
@@ -2901,7 +2904,7 @@ config.cursor_blink_ease_out = 'Constant'
 config.scrollback_lines = 10000
 
 -- ===== Text Selection =====
-config.selection_word_boundary = ' \t\n{}[]()"\'-'  -- Smart selection boundaries
+config.selection_word_boundary = ' \t\n{}[]()"\'-' -- Smart selection boundaries
 
 -- ===== Window Layout =====
 config.use_resize_increments = true
@@ -2952,25 +2955,25 @@ local kaku_theme = {
   -- Normal colors (ANSI 0-7)
   ansi = {
     KAKU_ANSI_BLACK, -- black
-    KAKU_RED,     -- red
-    KAKU_GREEN,   -- green
-    KAKU_ORANGE,  -- yellow
-    KAKU_BLUE,    -- blue
-    KAKU_PURPLE,  -- magenta
-    KAKU_GREEN,   -- cyan
-    KAKU_WHITE,   -- white
+    KAKU_RED,        -- red
+    KAKU_GREEN,      -- green
+    KAKU_ORANGE,     -- yellow
+    KAKU_BLUE,       -- blue
+    KAKU_PURPLE,     -- magenta
+    KAKU_GREEN,      -- cyan
+    KAKU_WHITE,      -- white
   },
 
   -- Bright colors (ANSI 8-15)
   brights = {
-    KAKU_GRAY,    -- bright black
-    KAKU_RED,     -- bright red
-    KAKU_GREEN,   -- bright green
-    KAKU_ORANGE,  -- bright yellow
+    KAKU_GRAY,        -- bright black
+    KAKU_RED,         -- bright red
+    KAKU_GREEN,       -- bright green
+    KAKU_ORANGE,      -- bright yellow
     KAKU_BRIGHT_BLUE, -- bright blue
-    KAKU_PURPLE,  -- bright magenta
-    KAKU_GREEN,   -- bright cyan
-    KAKU_WHITE,   -- bright white
+    KAKU_PURPLE,      -- bright magenta
+    KAKU_GREEN,       -- bright cyan
+    KAKU_WHITE,       -- bright white
   },
 
   split = KAKU_SURFACE_ACTIVE,
@@ -3014,9 +3017,9 @@ local kaku_theme = {
 
   -- Override Claude Code quote background for better contrast
   color_overrides = {
-    ['#6d6d6d'] = '#3A3942',  -- ANSI 8 (bright black)
-    ['#6E6E6E'] = '#3A3942',  -- Claude Code true color
-    ['#8EC3FF'] = '#3A3942',  -- Claude Code blue header background
+    ['#6d6d6d'] = '#3A3942', -- ANSI 8 (bright black)
+    ['#6E6E6E'] = '#3A3942', -- Claude Code true color
+    ['#8EC3FF'] = '#3A3942', -- Claude Code blue header background
   },
 }
 
@@ -3095,9 +3098,9 @@ local kaku_light = {
 
   -- Override Claude Code quote background for better contrast
   color_overrides = {
-    ['#575653'] = '#F2F0EB',  -- ANSI 7 (white)
-    ['#585754'] = '#F2F0EB',  -- Claude Code true color
-    ['#225FA6'] = '#F2F0EB',  -- Claude Code blue header background
+    ['#575653'] = '#F2F0EB', -- ANSI 7 (white)
+    ['#585754'] = '#F2F0EB', -- Claude Code true color
+    ['#225FA6'] = '#F2F0EB', -- Claude Code blue header background
   },
 }
 

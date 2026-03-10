@@ -39,16 +39,12 @@ fn active_pane_indicator_bounds(
     pos_height: usize,
 ) -> ::window::RectF {
     let split_col_gutter = (1 + 2 * split_pane_gap).max(1) as f32;
-    let left_split_inset = if pos_left == 0 {
-        0.0
-    } else {
-        cell_width * split_col_gutter / 2.0
-    };
+    let left_split_inset = cell_width * split_col_gutter / 2.0;
 
     euclid::rect(
         content_left + (pos_left as f32 * cell_width) - left_split_inset,
         top_pixel_y + (pos_top as f32 * cell_height),
-        (pos_width as f32 * cell_width) + left_split_inset,
+        (pos_width as f32 * cell_width) + (cell_width * split_col_gutter),
         pos_height as f32 * cell_height,
     )
 }
@@ -999,7 +995,34 @@ mod tests {
         let leftmost = active_pane_indicator_bounds(10.0, 20.0, 10.0, 20.0, 0, 0, 0, 10, 5);
         let inner = active_pane_indicator_bounds(10.0, 20.0, 10.0, 20.0, 0, 12, 0, 10, 5);
 
-        assert_eq!(leftmost, euclid::rect(10.0, 20.0, 100.0, 100.0));
-        assert_eq!(inner, euclid::rect(125.0, 20.0, 105.0, 100.0));
+        assert_eq!(leftmost, euclid::rect(5.0, 20.0, 110.0, 100.0));
+        assert_eq!(inner, euclid::rect(125.0, 20.0, 110.0, 100.0));
+    }
+
+    #[test]
+    fn leftmost_and_inner_panes_share_same_gutter_overlap_profile() {
+        let content_left = 10.0;
+        let cell_width = 10.0;
+        let left_padding = 4.0;
+        let width = 8.0;
+
+        let leftmost_bounds =
+            active_pane_indicator_bounds(content_left, 20.0, cell_width, 20.0, 0, 0, 0, 10, 5);
+        let inner_bounds =
+            active_pane_indicator_bounds(content_left, 20.0, cell_width, 20.0, 0, 12, 0, 10, 5);
+
+        let leftmost = active_pane_left_indicator_segment(leftmost_bounds, width, left_padding, 5, 5)
+            .expect("leftmost");
+        let inner =
+            active_pane_left_indicator_segment(inner_bounds, width, left_padding, 5, 5)
+                .expect("inner");
+
+        let leftmost_content_start = content_left;
+        let inner_content_start = content_left + (12.0 * cell_width);
+
+        let leftmost_overlap = leftmost.max_x() - leftmost_content_start;
+        let inner_overlap = inner.max_x() - inner_content_start;
+
+        assert_eq!(leftmost_overlap, inner_overlap);
     }
 }
