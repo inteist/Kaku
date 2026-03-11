@@ -9,7 +9,7 @@ use crate::utilsprites::RenderMetrics;
 use ::window::bitmaps::atlas::OutOfTextureSpace;
 use ::window::WindowOps;
 use anyhow::Context;
-use config::Dimension;
+use config::{Dimension, TabIndicator};
 use smol::Timer;
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
@@ -23,9 +23,12 @@ pub enum AllowImage {
     No,
 }
 
-const STATUS_DOT_SIZE: f32 = 12.0;
-const ACTIVE_GUTTER_WIDTH: f32 = 6.0;
+const ACTIVE_GUTTER_WIDTH: f32 = 8.0;
 const ACTIVE_GUTTER_LEFT_PADDING: f32 = 8.0;
+
+fn tab_indicator_size_px(size: usize) -> f32 {
+    size.max(1) as f32
+}
 
 fn active_pane_indicator_bounds(
     content_left: f32,
@@ -536,33 +539,36 @@ impl crate::TermWindow {
         const TOP_PANE_MARGIN_WITH_TAB_BAR: f32 = 24.0;
         const TOP_PANE_MARGIN_NO_TAB_BAR: f32 = 14.0;
         const LOWER_PANE_MARGIN: f32 = 20.0;
+        let indicator_size = tab_indicator_size_px(self.config.tab_indicator_size);
 
         // Draw dot indicator for the active pane when split
-        if let Some((dot_x, dot_y, is_top_pane)) = active_pane_top_right {
-            let top_pane_margin = if self.show_tab_bar && !self.config.tab_bar_at_bottom {
-                TOP_PANE_MARGIN_WITH_TAB_BAR
-            } else {
-                TOP_PANE_MARGIN_NO_TAB_BAR
-            };
-            let margin_top = if is_top_pane {
-                top_pane_margin
-            } else {
-                LOWER_PANE_MARGIN
-            };
+        if self.config.tab_indicator == TabIndicator::Bell {
+            if let Some((dot_x, dot_y, is_top_pane)) = active_pane_top_right {
+                let top_pane_margin = if self.show_tab_bar && !self.config.tab_bar_at_bottom {
+                    TOP_PANE_MARGIN_WITH_TAB_BAR
+                } else {
+                    TOP_PANE_MARGIN_NO_TAB_BAR
+                };
+                let margin_top = if is_top_pane {
+                    top_pane_margin
+                } else {
+                    LOWER_PANE_MARGIN
+                };
 
-            const DOT_ALPHA: f32 = 0.5;
-            let dot_color = self.palette().cursor_bg.to_linear().mul_alpha(DOT_ALPHA);
+                const DOT_ALPHA: f32 = 0.5;
+                let dot_color = self.palette().cursor_bg.to_linear().mul_alpha(DOT_ALPHA);
 
-            self.poly_quad(
-                &mut layers,
-                2,
-                euclid::point2(dot_x - STATUS_DOT_SIZE - RIGHT_INSET, dot_y + margin_top),
-                CIRCLE_POLY,
-                1,
-                euclid::size2(STATUS_DOT_SIZE, STATUS_DOT_SIZE),
-                dot_color,
-            )
-            .context("active pane indicator")?;
+                self.poly_quad(
+                    &mut layers,
+                    2,
+                    euclid::point2(dot_x - indicator_size - RIGHT_INSET, dot_y + margin_top),
+                    CIRCLE_POLY,
+                    1,
+                    euclid::size2(indicator_size, indicator_size),
+                    dot_color,
+                )
+                .context("active pane indicator")?;
+            }
         }
 
         if let Some(pane) = self.get_active_pane_or_overlay() {
@@ -572,74 +578,76 @@ impl crate::TermWindow {
                     .context("paint_split")?;
             }
 
-            if let Some((bounds, used_rows, total_rows)) = active_pane_indicator {
-                const ACTIVE_PANE_INDICATOR_ALPHA: f32 = 0.9;
-                let indicator_color = pane
-                    .palette()
-                    .cursor_bg
-                    .to_linear()
-                    .mul_alpha(ACTIVE_PANE_INDICATOR_ALPHA);
-                let indicator_left_padding = ACTIVE_GUTTER_LEFT_PADDING;
+            if self.config.tab_indicator == TabIndicator::Gutter {
+                if let Some((bounds, used_rows, total_rows)) = active_pane_indicator {
+                    const ACTIVE_PANE_INDICATOR_ALPHA: f32 = 0.9;
+                    let indicator_color = pane
+                        .palette()
+                        .cursor_bg
+                        .to_linear()
+                        .mul_alpha(ACTIVE_PANE_INDICATOR_ALPHA);
+                    let indicator_left_padding = ACTIVE_GUTTER_LEFT_PADDING;
 
-                if let Some(indicator) = active_pane_left_indicator_segment(
-                    bounds,
-                    ACTIVE_GUTTER_WIDTH,
-                    indicator_left_padding,
-                    used_rows,
-                    total_rows,
-                ) {
-                    let cap_diameter = indicator.width().min(indicator.height());
-                    let cap_radius = active_pane_gutter_radius(cap_diameter);
+                    if let Some(indicator) = active_pane_left_indicator_segment(
+                        bounds,
+                        ACTIVE_GUTTER_WIDTH.max(indicator_size),
+                        indicator_left_padding,
+                        used_rows,
+                        total_rows,
+                    ) {
+                        let cap_diameter = indicator.width().min(indicator.height());
+                        let cap_radius = active_pane_gutter_radius(cap_diameter);
 
-                    if indicator.height() <= cap_diameter {
-                        self.poly_quad(
-                            &mut layers,
-                            2,
-                            euclid::point2(
-                                indicator.min_x(),
-                                indicator.min_y() + (indicator.height() - cap_diameter) / 2.0,
-                            ),
-                            CIRCLE_POLY,
-                            1,
-                            euclid::size2(cap_diameter, cap_diameter),
-                            indicator_color,
-                        )
-                        .context("active pane left indicator cap")?;
-                    } else {
-                        self.poly_quad(
-                            &mut layers,
-                            2,
-                            euclid::point2(indicator.min_x(), indicator.min_y()),
-                            CIRCLE_POLY,
-                            1,
-                            euclid::size2(cap_diameter, cap_diameter),
-                            indicator_color,
-                        )
-                        .context("active pane left indicator top cap")?;
+                        if indicator.height() <= cap_diameter {
+                            self.poly_quad(
+                                &mut layers,
+                                2,
+                                euclid::point2(
+                                    indicator.min_x(),
+                                    indicator.min_y() + (indicator.height() - cap_diameter) / 2.0,
+                                ),
+                                CIRCLE_POLY,
+                                1,
+                                euclid::size2(cap_diameter, cap_diameter),
+                                indicator_color,
+                            )
+                            .context("active pane left indicator cap")?;
+                        } else {
+                            self.poly_quad(
+                                &mut layers,
+                                2,
+                                euclid::point2(indicator.min_x(), indicator.min_y()),
+                                CIRCLE_POLY,
+                                1,
+                                euclid::size2(cap_diameter, cap_diameter),
+                                indicator_color,
+                            )
+                            .context("active pane left indicator top cap")?;
 
-                        self.filled_rectangle(
-                            &mut layers,
-                            2,
-                            euclid::rect(
-                                indicator.min_x(),
-                                indicator.min_y() + cap_radius,
-                                indicator.width(),
-                                (indicator.height() - 2.0 * cap_radius).max(0.0),
-                            ),
-                            indicator_color,
-                        )
-                        .context("active pane left indicator body")?;
+                            self.filled_rectangle(
+                                &mut layers,
+                                2,
+                                euclid::rect(
+                                    indicator.min_x(),
+                                    indicator.min_y() + cap_radius,
+                                    indicator.width(),
+                                    (indicator.height() - 2.0 * cap_radius).max(0.0),
+                                ),
+                                indicator_color,
+                            )
+                            .context("active pane left indicator body")?;
 
-                        self.poly_quad(
-                            &mut layers,
-                            2,
-                            euclid::point2(indicator.min_x(), indicator.max_y() - cap_diameter),
-                            CIRCLE_POLY,
-                            1,
-                            euclid::size2(cap_diameter, cap_diameter),
-                            indicator_color,
-                        )
-                        .context("active pane left indicator bottom cap")?;
+                            self.poly_quad(
+                                &mut layers,
+                                2,
+                                euclid::point2(indicator.min_x(), indicator.max_y() - cap_diameter),
+                                CIRCLE_POLY,
+                                1,
+                                euclid::size2(cap_diameter, cap_diameter),
+                                indicator_color,
+                            )
+                            .context("active pane left indicator bottom cap")?;
+                        }
                     }
                 }
             }
@@ -705,7 +713,7 @@ impl crate::TermWindow {
         use crate::tabbar::TabBarItem;
 
         // Fast path: skip mux lock entirely if no panes have unread bells
-        if !self.config.bell_tab_indicator
+        if self.config.tab_indicator != TabIndicator::Bell
             || !self.pane_state.borrow().values().any(|s| s.has_unread_bell)
         {
             return Ok(());
@@ -749,6 +757,7 @@ impl crate::TermWindow {
         }];
 
         const DOT_RIGHT_MARGIN: f32 = 3.0;
+        let dot_size = tab_indicator_size_px(self.config.tab_indicator_size);
 
         for ui_item in &self.ui_items {
             if let crate::termwindow::UIItemType::TabBar(TabBarItem::Tab {
@@ -758,10 +767,9 @@ impl crate::TermWindow {
             {
                 if tabs_with_bell.contains(tab_idx) {
                     // Draw dot at the right side of the tab, vertically centered
-                    let dot_x =
-                        (ui_item.x + ui_item.width) as f32 - STATUS_DOT_SIZE - DOT_RIGHT_MARGIN;
-                    let dot_y = ui_item.y as f32
-                        + ((ui_item.height as f32 - STATUS_DOT_SIZE) / 2.0).round();
+                    let dot_x = (ui_item.x + ui_item.width) as f32 - dot_size - DOT_RIGHT_MARGIN;
+                    let dot_y =
+                        ui_item.y as f32 + ((ui_item.height as f32 - dot_size) / 2.0).round();
 
                     self.poly_quad(
                         layers,
@@ -769,7 +777,7 @@ impl crate::TermWindow {
                         euclid::point2(dot_x, dot_y),
                         CIRCLE_POLY,
                         1,
-                        euclid::size2(STATUS_DOT_SIZE, STATUS_DOT_SIZE),
+                        euclid::size2(dot_size, dot_size),
                         notif_color,
                     )
                     .context("tab bell indicator")?;

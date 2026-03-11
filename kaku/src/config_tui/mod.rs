@@ -341,11 +341,20 @@ impl App {
             },
             ConfigField {
                 section: "Behavior",
-                key: "Bell Tab Indicator",
-                lua_key: "bell_tab_indicator",
+                key: "Tab Indicator",
+                lua_key: "tab_indicator",
                 value: String::new(),
-                default: "On".into(),
-                options: vec!["On", "Off"],
+                default: "Gutter".into(),
+                options: vec!["Bell", "Gutter"],
+                skip_write: false,
+            },
+            ConfigField {
+                section: "Behavior",
+                key: "Tab Indicator Size",
+                lua_key: "tab_indicator_size",
+                value: String::new(),
+                default: "8".into(),
+                options: vec![],
                 skip_write: false,
             },
             ConfigField {
@@ -609,7 +618,7 @@ impl App {
                     Some(raw.to_string())
                 }
             }
-            "font_size" | "line_height" => {
+            "font_size" | "line_height" | "tab_indicator_size" => {
                 if Self::is_number_literal(raw) {
                     Some(raw.to_string())
                 } else {
@@ -620,12 +629,20 @@ impl App {
             | "enable_scroll_bar"
             | "tab_close_confirmation"
             | "pane_close_confirmation"
-            | "bell_tab_indicator"
             | "bell_dock_badge" => {
                 if raw == "true" {
                     Some("On".into())
                 } else if raw == "false" {
                     Some("Off".into())
+                } else {
+                    None
+                }
+            }
+            "tab_indicator" => {
+                if raw.eq_ignore_ascii_case("bell") || raw == "true" {
+                    Some("Bell".into())
+                } else if raw.eq_ignore_ascii_case("gutter") || raw == "false" {
+                    Some("Gutter".into())
                 } else {
                     None
                 }
@@ -1109,20 +1126,29 @@ impl App {
                 }
             }
             "font" => format!("wezterm.font('{}')", field.value),
-            "font_size" | "line_height" | "window_background_opacity" | "split_pane_gap" => {
-                field.value.clone()
-            }
+            "font_size"
+            | "line_height"
+            | "window_background_opacity"
+            | "split_pane_gap"
+            | "tab_indicator_size" => field.value.clone(),
             "copy_on_select"
             | "enable_scroll_bar"
             | "tab_close_confirmation"
             | "pane_close_confirmation"
-            | "bell_tab_indicator"
             | "bell_dock_badge" => {
                 if field.value == "On" {
                     "true".into()
                 } else {
                     "false".into()
                 }
+            }
+            "tab_indicator" => {
+                let effective = if field.value.is_empty() {
+                    &field.default
+                } else {
+                    &field.value
+                };
+                format!("'{}'", effective)
             }
             "hide_tab_bar_if_only_one_tab" => {
                 if field.value == "Auto" {
@@ -1318,6 +1344,57 @@ mod tests {
         assert_eq!(
             App::normalize_value("enable_scroll_bar", "false"),
             Some("Off".into())
+        );
+    }
+
+    #[test]
+    fn tab_indicator_field_defaults_to_gutter() {
+        let app = test_app();
+        let field = app
+            .fields
+            .iter()
+            .find(|f| f.lua_key == "tab_indicator")
+            .expect("tab_indicator field to exist");
+
+        assert_eq!(field.default, "Gutter");
+        assert_eq!(app.to_lua_value(field), "'Gutter'");
+    }
+
+    #[test]
+    fn normalize_tab_indicator_values() {
+        assert_eq!(
+            App::normalize_value("tab_indicator", "Bell"),
+            Some("Bell".into())
+        );
+        assert_eq!(
+            App::normalize_value("tab_indicator", "gutter"),
+            Some("Gutter".into())
+        );
+        // Backward-compatible bool mapping.
+        assert_eq!(
+            App::normalize_value("tab_indicator", "true"),
+            Some("Bell".into())
+        );
+        assert_eq!(
+            App::normalize_value("tab_indicator", "false"),
+            Some("Gutter".into())
+        );
+    }
+
+    #[test]
+    fn tab_indicator_size_serializes_as_number() {
+        let mut app = test_app();
+        let idx = app
+            .fields
+            .iter()
+            .position(|f| f.lua_key == "tab_indicator_size")
+            .expect("tab_indicator_size field to exist");
+        app.fields[idx].value = "12".to_string();
+
+        assert_eq!(app.to_lua_value(&app.fields[idx]), "12");
+        assert_eq!(
+            App::normalize_value("tab_indicator_size", "10"),
+            Some("10".into())
         );
     }
 

@@ -36,35 +36,35 @@
 
 Kaku comes with intuitive macOS-native shortcuts:
 
-| Action | Shortcut |
-| :--- | :--- |
-| Toggle Global Window | `Cmd + Opt + Ctrl + K` |
-| New Tab | `Cmd + T` |
-| New Window | `Cmd + N` |
-| Close Tab/Pane | `Cmd + W` |
-| Navigate Tabs | `Cmd + Shift + [`, `Cmd + Shift + ]` or `Cmd + 1-9` |
-| Navigate Panes | `Cmd + Opt + Arrows` |
-| Split Pane Vertical | `Cmd + D` |
-| Split Pane Horizontal | `Cmd + Shift + D` |
-| Toggle Split Direction | `Cmd + Shift + S` |
-| Zoom/Unzoom Pane | `Cmd + Shift + Enter` |
-| Resize Pane | `Cmd + Ctrl + Arrows` |
-| Open Settings Panel | `Cmd + ,` |
-| Reopen Closed Tab | `Cmd + Shift + T` |
-| Clear Screen | `Cmd + K` |
-| Doctor Panel | `Ctrl + Shift + L` |
-| AI Panel | `Cmd + Shift + A` |
-| Kaku Assistant Apply Suggestion | `Cmd + Shift + E` |
-| Open Lazygit | `Cmd + Shift + G` |
-| Yazi File Manager | `Cmd + Shift + Y` or `y` |
-| Font Size | `Cmd + +`, `Cmd + -`, `Cmd + 0` |
-| Smart Jump | `z <dir>` |
-| Smart Select | `z -l <dir>` |
-| Recent Dirs | `z -t` |
+| Action                          | Shortcut                                            |
+| :------------------------------ | :-------------------------------------------------- |
+| Toggle Global Window            | `Cmd + Opt + Ctrl + K`                              |
+| New Tab                         | `Cmd + T`                                           |
+| New Window                      | `Cmd + N`                                           |
+| Close Tab/Pane                  | `Cmd + W`                                           |
+| Navigate Tabs                   | `Cmd + Shift + [`, `Cmd + Shift + ]` or `Cmd + 1-9` |
+| Navigate Panes                  | `Cmd + Opt + Arrows`                                |
+| Split Pane Vertical             | `Cmd + D`                                           |
+| Split Pane Horizontal           | `Cmd + Shift + D`                                   |
+| Toggle Split Direction          | `Cmd + Shift + S`                                   |
+| Zoom/Unzoom Pane                | `Cmd + Shift + Enter`                               |
+| Resize Pane                     | `Cmd + Ctrl + Arrows`                               |
+| Open Settings Panel             | `Cmd + ,`                                           |
+| Reopen Closed Tab               | `Cmd + Shift + T`                                   |
+| Clear Screen                    | `Cmd + K`                                           |
+| Doctor Panel                    | `Ctrl + Shift + L`                                  |
+| AI Panel                        | `Cmd + Shift + A`                                   |
+| Kaku Assistant Apply Suggestion | `Cmd + Shift + E`                                   |
+| Open Lazygit                    | `Cmd + Shift + G`                                   |
+| Yazi File Manager               | `Cmd + Shift + Y` or `y`                            |
+| Font Size                       | `Cmd + +`, `Cmd + -`, `Cmd + 0`                     |
+| Smart Jump                      | `z <dir>`                                           |
+| Smart Select                    | `z -l <dir>`                                        |
+| Recent Dirs                     | `z -t`                                              |
 
 ### Intuitive Interactions
 
-- **Visual Bell**: A blinking dot appears on inactive tabs when background tasks finish. Optional Dock badge is controlled by `bell_dock_badge` (off by default); tab dots use `bell_tab_indicator`.
+- **Visual Bell**: A blinking dot appears on inactive tabs when background tasks finish. Optional Dock badge is controlled by `bell_dock_badge` (off by default); indicator style uses `tab_indicator=bell`.
 - **File Path Hyperlinks**: Relative and home-based file paths in terminal output become clickable links.
 - **Active Pane**: A subtle dot highlights the currently focused pane during split-screen workflows.
 - **Global Hotkey**: Press `Cmd + Opt + Ctrl + K` anytime to float Kaku over your current workspace.
@@ -139,12 +139,12 @@ So I built Kaku to be that environment: fast, polished, and ready to work.
 
 ### Performance
 
-| Metric | Upstream | Kaku | Methodology |
-| :--- | :--- | :--- | :--- |
-| **Executable Size** | ~67 MB | ~40 MB | Aggressive symbol stripping & feature pruning |
-| **Resources Volume** | ~100 MB | ~80 MB | Asset optimization & lazy-loaded assets |
-| **Launch Latency** | Standard | Instant | Just-in-time initialization |
-| **Shell Bootstrap** | ~200ms | ~100ms | Optimized environment provisioning |
+| Metric               | Upstream | Kaku    | Methodology                                   |
+| :------------------- | :------- | :------ | :-------------------------------------------- |
+| **Executable Size**  | ~67 MB   | ~40 MB  | Aggressive symbol stripping & feature pruning |
+| **Resources Volume** | ~100 MB  | ~80 MB  | Asset optimization & lazy-loaded assets       |
+| **Launch Latency**   | Standard | Instant | Just-in-time initialization                   |
+| **Shell Bootstrap**  | ~200ms   | ~100ms  | Optimized environment provisioning            |
 
 Achieved through aggressive stripping of unused features, lazy loading of color schemes, and shell optimizations.
 

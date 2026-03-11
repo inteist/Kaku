@@ -883,9 +883,17 @@ pub struct Config {
     #[dynamic(default)]
     pub audible_bell: AudibleBell,
 
-    /// Show a dot indicator on inactive tabs with unread bell events
-    #[dynamic(default = "default_true")]
-    pub bell_tab_indicator: bool,
+    /// Chooses the active pane indicator style.
+    /// Bell shows a dot at the top-right corner; Gutter shows a left gutter bar.
+    #[dynamic(default)]
+    pub tab_indicator: TabIndicator,
+
+    /// Pixel size for tab indicator visuals.
+    #[dynamic(
+        default = "default_tab_indicator_size",
+        validate = "validate_tab_indicator_size"
+    )]
+    pub tab_indicator_size: usize,
 
     /// Show a badge on the Dock icon when bell fires in unfocused window
     #[dynamic(default)]
@@ -946,6 +954,10 @@ impl_lua_conversion_dynamic!(Config);
 
 fn default_one() -> usize {
     1
+}
+
+fn default_tab_indicator_size() -> usize {
+    8
 }
 
 fn default_ulimit_nofile() -> u64 {
@@ -2487,6 +2499,39 @@ pub enum NotificationHandling {
     SuppressFromFocusedWindow,
 }
 
+#[derive(Debug, ToDynamic, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TabIndicator {
+    #[default]
+    Gutter,
+    Bell,
+}
+
+impl FromDynamic for TabIndicator {
+    fn from_dynamic(
+        value: &wezterm_dynamic::Value,
+        options: wezterm_dynamic::FromDynamicOptions,
+    ) -> Result<Self, wezterm_dynamic::Error> {
+        match String::from_dynamic(value, options) {
+            Ok(s) => {
+                if s.eq_ignore_ascii_case("bell") {
+                    Ok(Self::Bell)
+                } else if s.eq_ignore_ascii_case("gutter") {
+                    Ok(Self::Gutter)
+                } else {
+                    Err(wezterm_dynamic::Error::Message(format!(
+                        "`{s}` is not valid, use one of `Bell` or `Gutter`"
+                    )))
+                }
+            }
+            Err(err) => match bool::from_dynamic(value, options) {
+                Ok(true) => Ok(Self::Bell),
+                Ok(false) => Ok(Self::Gutter),
+                Err(_) => Err(err),
+            },
+        }
+    }
+}
+
 fn validate_row_or_col(value: &u16) -> Result<(), String> {
     if *value < 1 {
         Err("initial_cols and initial_rows must be non-zero".to_string())
@@ -2500,6 +2545,14 @@ fn validate_line_height(value: &f64) -> Result<(), String> {
         Err(format!(
             "Illegal value {value} for line_height; it must be positive and greater than zero!"
         ))
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_tab_indicator_size(value: &usize) -> Result<(), String> {
+    if *value == 0 {
+        Err("tab_indicator_size must be greater than zero".to_string())
     } else {
         Ok(())
     }
