@@ -17,6 +17,7 @@ const KAKU_AUTO_COLOR_SCHEME_EXPR: &str =
     "(wezterm.gui and wezterm.gui.get_appearance() or 'Dark'):find('Dark') and 'Kaku Dark' or 'Kaku Light'";
 const ACTIVE_PANE_INDICATOR_KEY: &str = "active_pane_indicator";
 const ACTIVE_PANE_INDICATOR_SIZE_KEY: &str = "active_pane_indicator_size";
+const WINDOW_BACKGROUND_OPACITY_KEY: &str = "window_background_opacity";
 
 pub fn run(config_path: PathBuf) -> anyhow::Result<()> {
     enable_raw_mode().context("enable raw mode")?;
@@ -329,6 +330,15 @@ impl App {
                 options: vec!["On", "Off"],
                 skip_write: false,
             },
+            ConfigField {
+                section: "Window",
+                key: "Transparency",
+                lua_key: WINDOW_BACKGROUND_OPACITY_KEY,
+                value: String::new(),
+                default: "0".into(),
+                options: vec![],
+                skip_write: false,
+            },
             //
             // –– B E H A V I O R
             ConfigField {
@@ -624,6 +634,46 @@ impl App {
         ))
     }
 
+    fn round_to_hundredth(value: f64) -> f64 {
+        (value * 100.0).round() / 100.0
+    }
+
+    fn format_decimal(value: f64) -> String {
+        let mut s = format!("{value:.2}");
+        while s.contains('.') && s.ends_with('0') {
+            s.pop();
+        }
+        if s.ends_with('.') {
+            s.pop();
+        }
+        s
+    }
+
+    fn opacity_to_transparency_percent(opacity: f64) -> String {
+        let opacity = Self::round_to_hundredth(opacity.clamp(0.0, 1.0));
+        let percent = (1.0 - opacity) * 100.0;
+        Self::format_decimal(percent)
+    }
+
+    fn is_horizontal_option_field(lua_key: &str) -> bool {
+        lua_key == ACTIVE_PANE_INDICATOR_KEY
+    }
+
+    fn cycle_horizontal_option(lua_key: &str, current: &str, direction: i32) -> Option<String> {
+        if lua_key != ACTIVE_PANE_INDICATOR_KEY {
+            return None;
+        }
+
+        let options = ["Off", "Bell", "Gutter", "Pill"];
+        let current_idx = options
+            .iter()
+            .position(|o| o.eq_ignore_ascii_case(current))
+            .unwrap_or(0) as i32;
+        let delta = if direction < 0 { -1 } else { 1 };
+        let next_idx = (current_idx + delta).rem_euclid(options.len() as i32) as usize;
+        Some(options[next_idx].to_string())
+    }
+
     /// Converts a raw Lua value string into the TUI's internal display format.
     /// Returns None when the value exists but cannot be parsed into a supported
     /// format; the caller should set skip_write=true to protect the original line.
@@ -647,6 +697,10 @@ impl App {
                 } else {
                     None
                 }
+            }
+            "window_background_opacity" => {
+                let opacity = raw.trim().parse::<f64>().ok()?;
+                Some(Self::opacity_to_transparency_percent(opacity))
             }
             "copy_on_select"
             | "enable_scroll_bar"
@@ -821,6 +875,9 @@ impl App {
         if self.is_field_disabled(field.lua_key) {
             return;
         }
+        if Self::is_horizontal_option_field(field.lua_key) {
+            return;
+        }
         if Self::numeric_step_for(field.lua_key).is_some() {
             return;
         }
@@ -919,14 +976,15 @@ impl App {
     fn numeric_step_for(lua_key: &str) -> Option<f64> {
         match lua_key {
             "font_size" => Some(1.0),
-            "line_height" => Some(0.01),
+            "line_height" => Some(0.05),
             "active_pane_indicator_size" => Some(1.0),
+            WINDOW_BACKGROUND_OPACITY_KEY => Some(1.0),
             _ => None,
         }
     }
 
     fn format_numeric_value(lua_key: &str, value: f64) -> String {
-        if lua_key == "line_height" {
+        if lua_key == "line_height" || lua_key == WINDOW_BACKGROUND_OPACITY_KEY {
             let mut s = format!("{value:.2}");
             while s.contains('.') && s.ends_with('0') {
                 s.pop();
@@ -950,6 +1008,19 @@ impl App {
         if self.is_field_disabled(lua_key) {
             return;
         }
+
+        if Self::is_horizontal_option_field(lua_key) {
+            let current = self.display_value(&self.fields[idx]).to_string();
+            if let Some(next_value) = Self::cycle_horizontal_option(lua_key, &current, direction) {
+                if self.fields[idx].value != next_value {
+                    self.fields[idx].value = next_value;
+                    self.fields[idx].skip_write = false;
+                    self.dirty = true;
+                }
+            }
+            return;
+        }
+
         let Some(step) = Self::numeric_step_for(lua_key) else {
             return;
         };
@@ -960,9 +1031,18 @@ impl App {
         };
 
         value += step * direction as f64;
-        let min_value = if lua_key == "line_height" { 0.05 } else { 1.0 };
+        let (min_value, max_value) = if lua_key == "line_height" {
+            (0.05, f64::MAX)
+        } else if lua_key == WINDOW_BACKGROUND_OPACITY_KEY {
+            (0.0, 100.0)
+        } else {
+            (1.0, f64::MAX)
+        };
         if value < min_value {
             value = min_value;
+        }
+        if value > max_value {
+            value = max_value;
         }
 
         let formatted = Self::format_numeric_value(lua_key, value);
@@ -1246,11 +1326,9 @@ impl App {
                 }
             }
             "font" => format!("wezterm.font('{}')", field.value),
-            "font_size"
-            | "line_height"
-            | "window_background_opacity"
-            | "split_pane_gap"
-            | "active_pane_indicator_size" => field.value.clone(),
+            "font_size" | "line_height" | "split_pane_gap" | "active_pane_indicator_size" => {
+                field.value.clone()
+            }
             "copy_on_select"
             | "enable_scroll_bar"
             | "tab_close_confirmation"
@@ -1302,6 +1380,17 @@ impl App {
                 } else {
                     "'INTEGRATED_BUTTONS|RESIZE|MACOS_FORCE_DISABLE_SHADOW'".into()
                 }
+            }
+            WINDOW_BACKGROUND_OPACITY_KEY => {
+                let percent = field
+                    .value
+                    .trim()
+                    .parse::<f64>()
+                    .ok()
+                    .unwrap_or_else(|| field.default.parse::<f64>().ok().unwrap_or(0.0));
+                let clamped_percent = percent.clamp(0.0, 100.0);
+                let opacity = Self::round_to_hundredth(1.0 - (clamped_percent / 100.0));
+                format!("{opacity:.2}")
             }
             "macos_global_hotkey" => {
                 if field.value.is_empty() {
@@ -1498,6 +1587,89 @@ mod tests {
             App::normalize_value("active_pane_indicator", "Pill"),
             Some("Pill".into())
         );
+    }
+
+    #[test]
+    fn normalize_window_background_opacity_to_transparency_percent() {
+        assert_eq!(
+            App::normalize_value("window_background_opacity", "1.0"),
+            Some("0".into())
+        );
+        assert_eq!(
+            App::normalize_value("window_background_opacity", "0.9"),
+            Some("10".into())
+        );
+        // check rounding behavior: 0.901 should round to 0.90 and thus 10% transparency
+        assert_eq!(
+            App::normalize_value("window_background_opacity", "0.901"),
+            Some("10".into())
+        );
+    }
+
+    #[test]
+    fn transparency_percent_serializes_back_to_inverted_opacity() {
+        let mut app = test_app();
+        let idx = app
+            .fields
+            .iter()
+            .position(|f| f.lua_key == "window_background_opacity")
+            .expect("window_background_opacity field to exist");
+        app.fields[idx].value = "10".to_string();
+
+        assert_eq!(app.to_lua_value(&app.fields[idx]), "0.90");
+
+        app.fields[idx].value = "0".to_string();
+        assert_eq!(app.to_lua_value(&app.fields[idx]), "1.00");
+    }
+
+    #[test]
+    fn active_pane_indicator_uses_horizontal_adjustment() {
+        let mut app = test_app();
+        let idx = app
+            .fields
+            .iter()
+            .position(|f| f.lua_key == "active_pane_indicator")
+            .expect("active_pane_indicator field to exist");
+        app.selected = idx;
+
+        app.adjust_selected_numeric(-1);
+        assert_eq!(app.fields[idx].value, "Bell");
+
+        app.adjust_selected_numeric(1);
+        assert_eq!(app.fields[idx].value, "Gutter");
+    }
+
+    #[test]
+    fn active_pane_indicator_enter_does_not_open_selector() {
+        let mut app = test_app();
+        let idx = app
+            .fields
+            .iter()
+            .position(|f| f.lua_key == "active_pane_indicator")
+            .expect("active_pane_indicator field to exist");
+        app.selected = idx;
+
+        app.start_edit();
+
+        assert!(matches!(app.mode, Mode::Normal));
+        assert!(!app.dirty);
+    }
+
+    #[test]
+    fn transparency_adjustment_clamps_to_zero_and_hundred() {
+        let mut app = test_app();
+        let idx = app
+            .fields
+            .iter()
+            .position(|f| f.lua_key == "window_background_opacity")
+            .expect("window_background_opacity field to exist");
+        app.selected = idx;
+
+        app.adjust_selected_numeric(200);
+        assert_eq!(app.fields[idx].value, "100");
+
+        app.adjust_selected_numeric(-500);
+        assert_eq!(app.fields[idx].value, "0");
     }
 
     #[test]

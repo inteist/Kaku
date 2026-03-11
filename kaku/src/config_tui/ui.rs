@@ -8,6 +8,7 @@ use crate::tui_core::theme::{accent, bg, muted, panel, primary, text_fg};
 
 const MIN_KEY_COLUMN_WIDTH: usize = 24;
 const KEY_VALUE_GAP: usize = 4;
+const WINDOW_BACKGROUND_OPACITY_KEY: &str = "window_background_opacity";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum MainLayoutMode {
@@ -218,7 +219,9 @@ fn render_fields(frame: &mut ratatui::Frame, area: Rect, app: &App) {
 
         let display_value = app.display_value(field);
         let has_options = field.has_options();
-        let has_horizontal_adjust = App::numeric_step_for(field.lua_key).is_some() && !is_disabled;
+        let has_horizontal_adjust = (App::numeric_step_for(field.lua_key).is_some()
+            || field.lua_key == "active_pane_indicator")
+            && !is_disabled;
 
         let key_style = if is_disabled {
             Style::default().fg(muted())
@@ -248,10 +251,16 @@ fn render_fields(frame: &mut ratatui::Frame, area: Rect, app: &App) {
         } else {
             ""
         };
-        let rendered_value = if has_horizontal_adjust {
-            format!("◀ {} ▶", display_value)
+        let value_label = if field.lua_key == WINDOW_BACKGROUND_OPACITY_KEY {
+            format!("{}%", display_value)
         } else {
-            format!("{}{}", display_value, suffix)
+            display_value.to_string()
+        };
+
+        let rendered_value = if has_horizontal_adjust {
+            format!("◀ {} ▶", value_label)
+        } else {
+            format!("{}{}", value_label, suffix)
         };
 
         let line = Line::from(vec![

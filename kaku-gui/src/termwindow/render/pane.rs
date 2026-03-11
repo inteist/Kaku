@@ -213,8 +213,8 @@ impl crate::TermWindow {
         let white_space = gl_state.util_sprites.white_space.texture_coords();
         let filled_box = gl_state.util_sprites.filled_box.texture_coords();
 
-        let window_is_transparent =
-            !self.window_background.is_empty() || config.window_background_opacity != 1.0;
+        let window_opacity = config.window_background_opacity;
+        let window_is_transparent = !self.window_background.is_empty() || window_opacity < 1.0;
 
         let default_bg = palette
             .resolve_bg(ColorAttribute::Default)
@@ -293,7 +293,7 @@ impl crate::TermWindow {
                     palette
                         .background
                         .to_linear()
-                        .mul_alpha(config.window_background_opacity),
+                        .mul_alpha(window_opacity),
                 )
                 .context("filled_rectangle")?;
             quad.set_hsv(if pos.is_active {
@@ -329,7 +329,7 @@ impl crate::TermWindow {
                     let (r1, g1, b1, a) = palette
                         .background
                         .to_linear()
-                        .mul_alpha(config.window_background_opacity)
+                        .mul_alpha(window_opacity)
                         .tuple();
                     LinearRgba::with_components(
                         r1 + (r - r1) * intensity,

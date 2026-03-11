@@ -286,8 +286,8 @@ impl crate::TermWindow {
 
         let panes = self.get_panes_to_render();
         let focused = self.focused.is_some();
-        let window_is_transparent =
-            !self.window_background.is_empty() || self.config.window_background_opacity != 1.0;
+        let window_opacity = self.config.window_background_opacity;
+        let window_is_transparent = !self.window_background.is_empty() || window_opacity < 1.0;
 
         let start = Instant::now();
         let gl_state = self.render_state.as_ref().unwrap();
@@ -335,7 +335,7 @@ impl crate::TermWindow {
                     self.palette().background
                 }
                 .to_linear()
-                .mul_alpha(self.config.window_background_opacity);
+                .mul_alpha(window_opacity);
                 let border = self.get_os_border();
                 let tab_bar_height = if self.show_tab_bar {
                     self.tab_bar_pixel_height()
@@ -345,31 +345,20 @@ impl crate::TermWindow {
                 };
                 let (_, padding_bottom) = self.effective_vertical_padding();
                 let padding_bottom = padding_bottom as f32;
-                let top_fill_height = border.top.get() as f32
-                    + if self.config.tab_bar_at_bottom {
-                        0.0
-                    } else {
-                        tab_bar_height
-                    };
-                let bottom_fill_height = padding_bottom
-                    + border.bottom.get() as f32
-                    + if self.config.tab_bar_at_bottom {
-                        tab_bar_height
-                    } else {
-                        0.0
-                    };
+                let top_fill_height = border.top.get() as f32;
+                let bottom_fill_height = padding_bottom + border.bottom.get() as f32;
+                let top_tab_bar_height = if self.show_tab_bar && !self.config.tab_bar_at_bottom {
+                    tab_bar_height
+                } else {
+                    0.0
+                };
+                let bottom_tab_bar_height = if self.show_tab_bar && self.config.tab_bar_at_bottom {
+                    tab_bar_height
+                } else {
+                    0.0
+                };
                 let right_fill_width =
                     self.effective_right_padding(&self.config) as f32 + border.right.get() as f32;
-                let left_fill_width =
-                    self.config
-                        .window_padding
-                        .left
-                        .evaluate_as_pixels(DimensionContext {
-                            dpi: self.dimensions.dpi as f32,
-                            pixel_max: self.terminal_size.pixel_width as f32,
-                            pixel_cell: self.render_metrics.cell_size.width as f32,
-                        })
-                        + border.left.get() as f32;
                 let window_width = self.dimensions.pixel_width as f32;
                 let window_height = self.dimensions.pixel_height as f32;
 
@@ -401,10 +390,12 @@ impl crate::TermWindow {
 
                 if right_fill_width > 0.0 {
                     let clamped_width = right_fill_width.min(window_width);
-                    let right_fill_y = top_fill_height.min(window_height);
-                    let right_fill_height =
-                        (window_height - right_fill_y - bottom_fill_height.min(window_height))
-                            .max(0.0);
+                    let right_fill_y = (top_fill_height + top_tab_bar_height).min(window_height);
+                    let right_fill_height = (window_height
+                        - right_fill_y
+                        - bottom_fill_height.min(window_height)
+                        - bottom_tab_bar_height.min(window_height))
+                    .max(0.0);
                     self.filled_rectangle(
                         &mut layers,
                         0,
@@ -417,21 +408,6 @@ impl crate::TermWindow {
                         strip_background,
                     )
                     .context("filled_rectangle for transparent right strip")?;
-                }
-
-                if left_fill_width > 0.0 {
-                    let clamped_width = left_fill_width.min(window_width);
-                    let left_fill_y = top_fill_height.min(window_height);
-                    let left_fill_height =
-                        (window_height - left_fill_y - bottom_fill_height.min(window_height))
-                            .max(0.0);
-                    self.filled_rectangle(
-                        &mut layers,
-                        0,
-                        euclid::rect(0.0, left_fill_y, clamped_width, left_fill_height),
-                        strip_background,
-                    )
-                    .context("filled_rectangle for transparent left strip")?;
                 }
             }
             _ => {
@@ -449,7 +425,7 @@ impl crate::TermWindow {
                 self.palette().background
             }
             .to_linear()
-            .mul_alpha(self.config.window_background_opacity);
+            .mul_alpha(window_opacity);
 
             self.filled_rectangle(
                 &mut layers,
