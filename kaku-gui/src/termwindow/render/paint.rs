@@ -561,8 +561,7 @@ impl crate::TermWindow {
         const TOP_PANE_MARGIN_WITH_TAB_BAR: f32 = 24.0;
         const TOP_PANE_MARGIN_NO_TAB_BAR: f32 = 14.0;
         const LOWER_PANE_MARGIN: f32 = 20.0;
-        let indicator_size =
-            active_pane_indicator_size_px(self.config.active_pane_indicator_size);
+        let indicator_size = active_pane_indicator_size_px(self.config.active_pane_indicator_size);
 
         // Draw dot indicator for the active pane when split
         if self.config.active_pane_indicator == ActivePaneIndicator::Bell {
@@ -793,8 +792,7 @@ impl crate::TermWindow {
         }];
 
         const DOT_RIGHT_MARGIN: f32 = 3.0;
-        let dot_size =
-            active_pane_indicator_size_px(self.config.active_pane_indicator_size);
+        let dot_size = active_pane_indicator_size_px(self.config.active_pane_indicator_size);
 
         for ui_item in &self.ui_items {
             if let crate::termwindow::UIItemType::TabBar(TabBarItem::Tab {
@@ -958,9 +956,8 @@ impl crate::TermWindow {
 #[cfg(test)]
 mod tests {
     use super::{
-        active_pane_gutter_radius, active_pane_indicator_bounds,
-        active_pane_indicator_size_px, active_pane_left_indicator_segment,
-        active_pane_left_pill_segment,
+        active_pane_gutter_radius, active_pane_indicator_bounds, active_pane_indicator_size_px,
+        active_pane_left_indicator_segment, active_pane_left_pill_segment,
         toast_colors_for_palette,
     };
     use wezterm_term::color::{ColorPalette, SrgbaTuple};

@@ -236,7 +236,8 @@ struct App {
 impl App {
     fn new(config_path: PathBuf) -> Self {
         let fields = vec![
-            // Appearance
+            //
+            // –– A P P E A R A N C E
             ConfigField {
                 section: "Appearance",
                 key: "Theme",
@@ -273,6 +274,8 @@ impl App {
                 options: vec![],
                 skip_write: false,
             },
+            //
+            // –– O S  I N T E G R A T I O N
             ConfigField {
                 section: "Integrations",
                 key: "Global Hotkey",
@@ -291,6 +294,8 @@ impl App {
                 options: vec!["On", "Off"],
                 skip_write: false,
             },
+            //
+            // –– W I N D O W
             ConfigField {
                 section: "Window",
                 key: "Tab Bar Position",
@@ -318,6 +323,8 @@ impl App {
                 options: vec!["On", "Off"],
                 skip_write: false,
             },
+            //
+            // –– B E H A V I O R
             ConfigField {
                 section: "Behavior",
                 key: "Copy on Select",
@@ -354,7 +361,8 @@ impl App {
                 options: vec!["On", "Off"],
                 skip_write: false,
             },
-            // P
+            //
+            // –– P A N E S
             ConfigField {
                 section: "Panes",
                 key: "Active Pane Indicator",
@@ -414,7 +422,9 @@ impl App {
 
         for i in 0..self.fields.len() {
             let lua_key = self.fields[i].lua_key;
-            match Self::extract_lua_value(&content, lua_key) {
+            let extracted = Self::extract_lua_value(&content, lua_key);
+
+            match extracted {
                 Some(val) => match Self::normalize_value(lua_key, &val) {
                     Some(normalized) => self.fields[i].value = normalized,
                     // Recognized key, but value format is unsupported.
@@ -646,9 +656,9 @@ impl App {
                 }
             }
             "active_pane_indicator" => {
-                if raw.eq_ignore_ascii_case("bell") || raw == "true" {
+                if raw.eq_ignore_ascii_case("bell") {
                     Some("Bell".into())
-                } else if raw.eq_ignore_ascii_case("gutter") || raw == "false" {
+                } else if raw.eq_ignore_ascii_case("gutter") {
                     Some("Gutter".into())
                 } else if raw.eq_ignore_ascii_case("pill") {
                     Some("Pill".into())
@@ -985,6 +995,7 @@ impl App {
             if field.skip_write {
                 continue;
             }
+
             let is_default = field.value.is_empty() || field.value == field.default;
             // Keep tab bar position explicit so switching back to Bottom
             // does not depend on removing a line and inheriting bundled defaults.
@@ -1442,15 +1453,6 @@ mod tests {
         assert_eq!(
             App::normalize_value("active_pane_indicator", "Pill"),
             Some("Pill".into())
-        );
-        // Backward-compatible bool mapping.
-        assert_eq!(
-            App::normalize_value("active_pane_indicator", "true"),
-            Some("Bell".into())
-        );
-        assert_eq!(
-            App::normalize_value("active_pane_indicator", "false"),
-            Some("Gutter".into())
         );
     }
 

@@ -6,6 +6,9 @@ use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragra
 use super::{App, Mode};
 use crate::tui_core::theme::{accent, bg, muted, panel, primary, text_fg};
 
+const MIN_KEY_COLUMN_WIDTH: usize = 24;
+const KEY_VALUE_GAP: usize = 4;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum MainLayoutMode {
     HeaderOnly,
@@ -146,15 +149,27 @@ fn rendered_field_row_count(app: &App) -> u16 {
 }
 
 fn render_header(frame: &mut ratatui::Frame, area: Rect) {
+    let version = format!("v{}", config::wezterm_version());
     let line = Line::from(vec![
         Span::styled(
-            "  Kaku",
+            "  Kaku ",
             Style::default().fg(primary()).add_modifier(Modifier::BOLD),
         ),
+        Span::styled(version, Style::default().fg(primary())),
         Span::styled(" · ", Style::default().fg(muted())),
         Span::styled("Settings", Style::default().fg(text_fg())),
     ]);
     frame.render_widget(Paragraph::new(vec![line, Line::from("")]), area);
+}
+
+fn key_column_width(app: &App) -> usize {
+    let widest_key = app
+        .fields
+        .iter()
+        .map(|field| field.key.chars().count())
+        .max()
+        .unwrap_or(0);
+    MIN_KEY_COLUMN_WIDTH.max(widest_key + KEY_VALUE_GAP)
 }
 
 fn render_fields(frame: &mut ratatui::Frame, area: Rect, app: &App) {
@@ -162,7 +177,7 @@ fn render_fields(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     let mut items: Vec<ListItem> = Vec::new();
     let mut selected_flat: Option<usize> = None;
     let mut flat = 0usize;
-    let key_width = 24usize;
+    let key_width = key_column_width(app);
     let mut current_section: Option<&str> = None;
 
     for (idx, field) in app.fields.iter().enumerate() {
@@ -449,6 +464,32 @@ fn render_editor(frame: &mut ratatui::Frame, area: Rect, app: &App) {
 
     let input = Paragraph::new(vec![line]).wrap(ratatui::widgets::Wrap { trim: false });
     frame.render_widget(input, content_area);
+}
+
+#[cfg(test)]
+mod spacing_tests {
+    use super::{key_column_width, KEY_VALUE_GAP, MIN_KEY_COLUMN_WIDTH};
+    use crate::config_tui::App;
+    use std::path::PathBuf;
+
+    #[test]
+    fn key_column_width_respects_minimum() {
+        let app = App::new(PathBuf::from("/tmp/kaku-config-tui-test.lua"));
+        assert!(key_column_width(&app) >= MIN_KEY_COLUMN_WIDTH);
+    }
+
+    #[test]
+    fn key_column_width_tracks_longest_key_plus_gap() {
+        let app = App::new(PathBuf::from("/tmp/kaku-config-tui-test.lua"));
+        let widest_key = app
+            .fields
+            .iter()
+            .map(|field| field.key.chars().count())
+            .max()
+            .unwrap_or(0);
+        let expected = widest_key + KEY_VALUE_GAP;
+        assert_eq!(key_column_width(&app), expected.max(MIN_KEY_COLUMN_WIDTH));
+    }
 }
 
 #[cfg(test)]
