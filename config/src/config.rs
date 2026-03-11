@@ -883,9 +883,7 @@ pub struct Config {
     #[dynamic(default)]
     pub audible_bell: AudibleBell,
 
-    /// Chooses the active pane indicator style.
-    /// Bell shows a dot at the top-right corner; Gutter shows a left gutter bar
-    /// tied to active line usage; Pill shows a centered short left pill.
+    /// Active pane indicator style.
     #[dynamic(default)]
     pub active_pane_indicator: ActivePaneIndicator,
 
@@ -2502,6 +2500,7 @@ pub enum NotificationHandling {
 
 #[derive(Debug, ToDynamic, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ActivePaneIndicator {
+    Off,
     #[default]
     Gutter,
     Bell,
@@ -2521,9 +2520,11 @@ impl FromDynamic for ActivePaneIndicator {
                     Ok(Self::Gutter)
                 } else if s.eq_ignore_ascii_case("pill") {
                     Ok(Self::Pill)
+                } else if s.eq_ignore_ascii_case("off") {
+                    Ok(Self::Off)
                 } else {
                     Err(wezterm_dynamic::Error::Message(format!(
-                        "`{s}` is not valid, use one of `Bell`, `Gutter` or `Pill`"
+                        "`{s}` is not valid, use one of `Off`, `Bell`, `Gutter` or `Pill`"
                     )))
                 }
             }

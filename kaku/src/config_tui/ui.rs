@@ -199,21 +199,26 @@ fn render_fields(frame: &mut ratatui::Frame, area: Rect, app: &App) {
         }
 
         let is_selected = idx == app.selected;
-        if is_selected {
+        let is_disabled = app.is_field_disabled(field.lua_key);
+        if is_selected && !is_disabled {
             selected_flat = Some(flat);
         }
 
         let display_value = app.display_value(field);
         let has_options = field.has_options();
-        let has_horizontal_adjust = App::numeric_step_for(field.lua_key).is_some();
+        let has_horizontal_adjust = App::numeric_step_for(field.lua_key).is_some() && !is_disabled;
 
-        let key_style = if is_selected {
+        let key_style = if is_disabled {
+            Style::default().fg(muted())
+        } else if is_selected {
             Style::default().fg(primary()).add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(text_fg())
         };
 
-        let value_style = if is_selected {
+        let value_style = if is_disabled {
+            Style::default().fg(muted())
+        } else if is_selected {
             Style::default().fg(primary()).add_modifier(Modifier::BOLD)
         } else if field.value.is_empty() {
             Style::default().fg(muted())
@@ -221,7 +226,11 @@ fn render_fields(frame: &mut ratatui::Frame, area: Rect, app: &App) {
             Style::default().fg(accent())
         };
 
-        let marker = if is_selected { "› " } else { "  " };
+        let marker = if is_selected && !is_disabled {
+            "› "
+        } else {
+            "  "
+        };
         let suffix = if has_options && field.options.len() > 2 {
             " ▾"
         } else {

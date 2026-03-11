@@ -561,10 +561,11 @@ impl crate::TermWindow {
         const TOP_PANE_MARGIN_WITH_TAB_BAR: f32 = 24.0;
         const TOP_PANE_MARGIN_NO_TAB_BAR: f32 = 14.0;
         const LOWER_PANE_MARGIN: f32 = 20.0;
+        let indicator_mode = self.config.active_pane_indicator;
         let indicator_size = active_pane_indicator_size_px(self.config.active_pane_indicator_size);
 
         // Draw dot indicator for the active pane when split
-        if self.config.active_pane_indicator == ActivePaneIndicator::Bell {
+        if indicator_mode == ActivePaneIndicator::Bell {
             if let Some((dot_x, dot_y, is_top_pane)) = active_pane_top_right {
                 let top_pane_margin = if self.show_tab_bar && !self.config.tab_bar_at_bottom {
                     TOP_PANE_MARGIN_WITH_TAB_BAR
@@ -600,9 +601,10 @@ impl crate::TermWindow {
                     .context("paint_split")?;
             }
 
-            if self.config.active_pane_indicator == ActivePaneIndicator::Gutter
-                || self.config.active_pane_indicator == ActivePaneIndicator::Pill
-            {
+            if matches!(
+                indicator_mode,
+                ActivePaneIndicator::Gutter | ActivePaneIndicator::Pill
+            ) {
                 if let Some((bounds, used_rows, total_rows)) = active_pane_indicator {
                     const ACTIVE_PANE_INDICATOR_ALPHA: f32 = 0.9;
                     let indicator_color = pane
@@ -612,8 +614,7 @@ impl crate::TermWindow {
                         .mul_alpha(ACTIVE_PANE_INDICATOR_ALPHA);
                     let indicator_left_padding = ACTIVE_GUTTER_LEFT_PADDING;
 
-                    let segment = if self.config.active_pane_indicator == ActivePaneIndicator::Pill
-                    {
+                    let segment = if indicator_mode == ActivePaneIndicator::Pill {
                         active_pane_left_pill_segment(
                             bounds,
                             indicator_size,

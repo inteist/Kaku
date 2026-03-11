@@ -15,6 +15,8 @@ use std::path::{Path, PathBuf};
 
 const KAKU_AUTO_COLOR_SCHEME_EXPR: &str =
     "(wezterm.gui and wezterm.gui.get_appearance() or 'Dark'):find('Dark') and 'Kaku Dark' or 'Kaku Light'";
+const ACTIVE_PANE_INDICATOR_KEY: &str = "active_pane_indicator";
+const ACTIVE_PANE_INDICATOR_SIZE_KEY: &str = "active_pane_indicator_size";
 
 pub fn run(config_path: PathBuf) -> anyhow::Result<()> {
     enable_raw_mode().context("enable raw mode")?;
@@ -366,16 +368,16 @@ impl App {
             ConfigField {
                 section: "Panes",
                 key: "Active Pane Indicator",
-                lua_key: "active_pane_indicator",
+                lua_key: ACTIVE_PANE_INDICATOR_KEY,
                 value: String::new(),
                 default: "Gutter".into(),
-                options: vec!["Bell", "Gutter", "Pill"],
+                options: vec!["Off", "Bell", "Gutter", "Pill"],
                 skip_write: false,
             },
             ConfigField {
                 section: "Panes",
                 key: "Indicator Size",
-                lua_key: "active_pane_indicator_size",
+                lua_key: ACTIVE_PANE_INDICATOR_SIZE_KEY,
                 value: String::new(),
                 default: "8".into(),
                 options: vec![],
@@ -656,7 +658,9 @@ impl App {
                 }
             }
             "active_pane_indicator" => {
-                if raw.eq_ignore_ascii_case("bell") {
+                if raw.eq_ignore_ascii_case("off") {
+                    Some("Off".into())
+                } else if raw.eq_ignore_ascii_case("bell") {
                     Some("Bell".into())
                 } else if raw.eq_ignore_ascii_case("gutter") {
                     Some("Gutter".into())
@@ -743,15 +747,41 @@ impl App {
     }
 
     fn move_up(&mut self) {
-        if self.selected > 0 {
-            self.selected -= 1;
+        if self.selected == 0 {
+            return;
+        }
+
+        for idx in (0..self.selected).rev() {
+            if !self.is_field_disabled(self.fields[idx].lua_key) {
+                self.selected = idx;
+                return;
+            }
         }
     }
 
     fn move_down(&mut self) {
-        if self.selected + 1 < self.item_count() {
-            self.selected += 1;
+        if self.selected + 1 >= self.item_count() {
+            return;
         }
+
+        for idx in self.selected + 1..self.item_count() {
+            if !self.is_field_disabled(self.fields[idx].lua_key) {
+                self.selected = idx;
+                return;
+            }
+        }
+    }
+
+    fn is_active_pane_indicator_off(&self) -> bool {
+        self.fields
+            .iter()
+            .find(|field| field.lua_key == ACTIVE_PANE_INDICATOR_KEY)
+            .map(|field| self.display_value(field).eq_ignore_ascii_case("off"))
+            .unwrap_or(false)
+    }
+
+    pub(super) fn is_field_disabled(&self, lua_key: &str) -> bool {
+        lua_key == ACTIVE_PANE_INDICATOR_SIZE_KEY && self.is_active_pane_indicator_off()
     }
 
     fn item_count(&self) -> usize {
@@ -784,6 +814,9 @@ impl App {
 
     fn start_edit(&mut self) {
         let field = &self.fields[self.selected];
+        if self.is_field_disabled(field.lua_key) {
+            return;
+        }
         if Self::numeric_step_for(field.lua_key).is_some() {
             return;
         }
@@ -910,6 +943,9 @@ impl App {
 
         let idx = self.selected;
         let lua_key = self.fields[idx].lua_key;
+        if self.is_field_disabled(lua_key) {
+            return;
+        }
         let Some(step) = Self::numeric_step_for(lua_key) else {
             return;
         };
@@ -1443,6 +1479,10 @@ mod tests {
     #[test]
     fn normalize_active_pane_indicator_values() {
         assert_eq!(
+            App::normalize_value("active_pane_indicator", "off"),
+            Some("Off".into())
+        );
+        assert_eq!(
             App::normalize_value("active_pane_indicator", "Bell"),
             Some("Bell".into())
         );
@@ -1617,6 +1657,49 @@ mod tests {
         app.selected = indicator_idx;
         app.adjust_selected_numeric(-100);
         assert_eq!(app.fields[indicator_idx].value, "1");
+    }
+
+    #[test]
+    fn indicator_size_is_disabled_when_indicator_mode_is_off() {
+        let mut app = test_app();
+        let mode_idx = app
+            .fields
+            .iter()
+            .position(|f| f.lua_key == "active_pane_indicator")
+            .expect("active_pane_indicator field to exist");
+        let size_idx = app
+            .fields
+            .iter()
+            .position(|f| f.lua_key == "active_pane_indicator_size")
+            .expect("active_pane_indicator_size field to exist");
+
+        app.fields[mode_idx].value = "Off".to_string();
+        app.selected = size_idx;
+        let initial_value = app.fields[size_idx].value.clone();
+
+        assert!(app.is_field_disabled("active_pane_indicator_size"));
+
+        app.adjust_selected_numeric(1);
+        app.start_edit();
+
+        assert_eq!(app.fields[size_idx].value, initial_value);
+        assert!(!app.dirty);
+    }
+
+    #[test]
+    fn move_down_skips_disabled_indicator_size_when_off() {
+        let mut app = test_app();
+        let mode_idx = app
+            .fields
+            .iter()
+            .position(|f| f.lua_key == "active_pane_indicator")
+            .expect("active_pane_indicator field to exist");
+
+        app.fields[mode_idx].value = "Off".to_string();
+        app.selected = mode_idx;
+        app.move_down();
+
+        assert_eq!(app.selected, mode_idx);
     }
 
     #[test]
