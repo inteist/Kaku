@@ -70,11 +70,15 @@ fn run_app(
 
         match app.mode {
             Mode::Normal => match key.code {
-                // Q / ESC: exit (auto-save if dirty, signal if any save occurred)
-                KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => {
+                // ESC: save and exit (auto-save if dirty, signal if any save occurred)
+                KeyCode::Esc => {
                     if let Err(e) = app.save_if_dirty() {
                         return Err(e);
                     }
+                    return Ok(());
+                }
+                // Q: discard changes and quit
+                KeyCode::Char('q') | KeyCode::Char('Q') => {
                     return Ok(());
                 }
                 // E: open in editor (save first if dirty)
@@ -915,7 +919,7 @@ impl App {
     fn numeric_step_for(lua_key: &str) -> Option<f64> {
         match lua_key {
             "font_size" => Some(1.0),
-            "line_height" => Some(0.05),
+            "line_height" => Some(0.01),
             "active_pane_indicator_size" => Some(1.0),
             _ => None,
         }

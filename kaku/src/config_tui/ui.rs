@@ -25,6 +25,9 @@ struct FooterCopy {
     secondary_key: Option<&'static str>,
     secondary_long: Option<&'static str>,
     secondary_short: Option<&'static str>,
+    tertiary_key: Option<&'static str>,
+    tertiary_long: Option<&'static str>,
+    tertiary_short: Option<&'static str>,
 }
 
 fn footer_copy(mode: Mode) -> FooterCopy {
@@ -36,6 +39,9 @@ fn footer_copy(mode: Mode) -> FooterCopy {
             secondary_key: Some("E"),
             secondary_long: Some(" open full config"),
             secondary_short: Some(" config"),
+            tertiary_key: Some("Q"),
+            tertiary_long: Some(" discard changes and quit"),
+            tertiary_short: Some(" quit"),
         },
         Mode::Selecting => FooterCopy {
             primary_key: "Enter",
@@ -44,6 +50,9 @@ fn footer_copy(mode: Mode) -> FooterCopy {
             secondary_key: Some("ESC"),
             secondary_long: Some(" apply & exit"),
             secondary_short: Some(" apply"),
+            tertiary_key: None,
+            tertiary_long: None,
+            tertiary_short: None,
         },
         Mode::Editing => FooterCopy {
             primary_key: "Enter",
@@ -52,6 +61,9 @@ fn footer_copy(mode: Mode) -> FooterCopy {
             secondary_key: Some("ESC"),
             secondary_long: Some(" cancel edit"),
             secondary_short: Some(" cancel"),
+            tertiary_key: None,
+            tertiary_long: None,
+            tertiary_short: None,
         },
     }
 }
@@ -274,44 +286,64 @@ fn render_fields(frame: &mut ratatui::Frame, area: Rect, app: &App) {
 
 fn render_footer(frame: &mut ratatui::Frame, area: Rect, mode: Mode) {
     let copy = footer_copy(mode);
-    let line = if area.width >= 44 {
-        Line::from(vec![
+    let line = if area.width >= 80 {
+        let mut spans = vec![
             Span::styled("  ", Style::default()),
             Span::styled(copy.primary_key, Style::default().fg(primary())),
             Span::styled(copy.primary_long, Style::default().fg(muted())),
-            if copy.secondary_key.is_some() || copy.secondary_long.is_some() {
-                Span::styled("  ·  ", Style::default().fg(muted()))
-            } else {
-                Span::raw("")
-            },
-            Span::styled(
+        ];
+        if copy.secondary_key.is_some() || copy.secondary_long.is_some() {
+            spans.push(Span::styled("  ·  ", Style::default().fg(muted())));
+            spans.push(Span::styled(
                 copy.secondary_key.unwrap_or(""),
                 Style::default().fg(primary()),
-            ),
-            Span::styled(
+            ));
+            spans.push(Span::styled(
                 copy.secondary_long.unwrap_or(""),
                 Style::default().fg(muted()),
-            ),
-        ])
-    } else if area.width >= 30 {
-        Line::from(vec![
+            ));
+        }
+        if copy.tertiary_key.is_some() || copy.tertiary_long.is_some() {
+            spans.push(Span::styled("  ·  ", Style::default().fg(muted())));
+            spans.push(Span::styled(
+                copy.tertiary_key.unwrap_or(""),
+                Style::default().fg(primary()),
+            ));
+            spans.push(Span::styled(
+                copy.tertiary_long.unwrap_or(""),
+                Style::default().fg(muted()),
+            ));
+        }
+        Line::from(spans)
+    } else if area.width >= 40 {
+        let mut spans = vec![
             Span::styled("  ", Style::default()),
             Span::styled(copy.primary_key, Style::default().fg(primary())),
             Span::styled(copy.primary_short, Style::default().fg(muted())),
-            if copy.secondary_key.is_some() || copy.secondary_short.is_some() {
-                Span::styled("  ·  ", Style::default().fg(muted()))
-            } else {
-                Span::raw("")
-            },
-            Span::styled(
+        ];
+        if copy.secondary_key.is_some() || copy.secondary_short.is_some() {
+            spans.push(Span::styled("  ·  ", Style::default().fg(muted())));
+            spans.push(Span::styled(
                 copy.secondary_key.unwrap_or(""),
                 Style::default().fg(primary()),
-            ),
-            Span::styled(
+            ));
+            spans.push(Span::styled(
                 copy.secondary_short.unwrap_or(""),
                 Style::default().fg(muted()),
-            ),
-        ])
+            ));
+        }
+        if copy.tertiary_key.is_some() || copy.tertiary_short.is_some() {
+            spans.push(Span::styled("  ·  ", Style::default().fg(muted())));
+            spans.push(Span::styled(
+                copy.tertiary_key.unwrap_or(""),
+                Style::default().fg(primary()),
+            ));
+            spans.push(Span::styled(
+                copy.tertiary_short.unwrap_or(""),
+                Style::default().fg(muted()),
+            ));
+        }
+        Line::from(spans)
     } else {
         Line::from(vec![
             Span::styled("  ", Style::default()),
@@ -534,6 +566,9 @@ mod tests {
                 secondary_key: Some("E"),
                 secondary_long: Some(" open full config"),
                 secondary_short: Some(" config"),
+                tertiary_key: Some("Q"),
+                tertiary_long: Some(" discard changes and quit"),
+                tertiary_short: Some(" quit"),
             }
         );
     }
@@ -549,6 +584,9 @@ mod tests {
                 secondary_key: Some("ESC"),
                 secondary_long: Some(" apply & exit"),
                 secondary_short: Some(" apply"),
+                tertiary_key: None,
+                tertiary_long: None,
+                tertiary_short: None,
             }
         );
     }
@@ -564,6 +602,9 @@ mod tests {
                 secondary_key: Some("ESC"),
                 secondary_long: Some(" cancel edit"),
                 secondary_short: Some(" cancel"),
+                tertiary_key: None,
+                tertiary_long: None,
+                tertiary_short: None,
             }
         );
     }
