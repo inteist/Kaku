@@ -884,16 +884,17 @@ pub struct Config {
     pub audible_bell: AudibleBell,
 
     /// Chooses the active pane indicator style.
-    /// Bell shows a dot at the top-right corner; Gutter shows a left gutter bar.
+    /// Bell shows a dot at the top-right corner; Gutter shows a left gutter bar
+    /// tied to active line usage; Pill shows a centered short left pill.
     #[dynamic(default)]
-    pub tab_indicator: TabIndicator,
+    pub active_pane_indicator: ActivePaneIndicator,
 
-    /// Pixel size for tab indicator visuals.
+    /// Pixel size for active pane indicator visuals.
     #[dynamic(
-        default = "default_tab_indicator_size",
-        validate = "validate_tab_indicator_size"
+        default = "default_active_pane_indicator_size",
+        validate = "validate_active_pane_indicator_size"
     )]
-    pub tab_indicator_size: usize,
+    pub active_pane_indicator_size: usize,
 
     /// Show a badge on the Dock icon when bell fires in unfocused window
     #[dynamic(default)]
@@ -956,7 +957,7 @@ fn default_one() -> usize {
     1
 }
 
-fn default_tab_indicator_size() -> usize {
+fn default_active_pane_indicator_size() -> usize {
     8
 }
 
@@ -2500,13 +2501,14 @@ pub enum NotificationHandling {
 }
 
 #[derive(Debug, ToDynamic, Clone, Copy, PartialEq, Eq, Default)]
-pub enum TabIndicator {
+pub enum ActivePaneIndicator {
     #[default]
     Gutter,
     Bell,
+    Pill,
 }
 
-impl FromDynamic for TabIndicator {
+impl FromDynamic for ActivePaneIndicator {
     fn from_dynamic(
         value: &wezterm_dynamic::Value,
         options: wezterm_dynamic::FromDynamicOptions,
@@ -2517,9 +2519,11 @@ impl FromDynamic for TabIndicator {
                     Ok(Self::Bell)
                 } else if s.eq_ignore_ascii_case("gutter") {
                     Ok(Self::Gutter)
+                } else if s.eq_ignore_ascii_case("pill") {
+                    Ok(Self::Pill)
                 } else {
                     Err(wezterm_dynamic::Error::Message(format!(
-                        "`{s}` is not valid, use one of `Bell` or `Gutter`"
+                        "`{s}` is not valid, use one of `Bell`, `Gutter` or `Pill`"
                     )))
                 }
             }
@@ -2550,9 +2554,9 @@ fn validate_line_height(value: &f64) -> Result<(), String> {
     }
 }
 
-fn validate_tab_indicator_size(value: &usize) -> Result<(), String> {
+fn validate_active_pane_indicator_size(value: &usize) -> Result<(), String> {
     if *value == 0 {
-        Err("tab_indicator_size must be greater than zero".to_string())
+        Err("active_pane_indicator_size must be greater than zero".to_string())
     } else {
         Ok(())
     }

@@ -190,6 +190,7 @@ fn render_fields(frame: &mut ratatui::Frame, area: Rect, app: &App) {
 
         let display_value = app.display_value(field);
         let has_options = field.has_options();
+        let has_horizontal_adjust = App::numeric_step_for(field.lua_key).is_some();
 
         let key_style = if is_selected {
             Style::default().fg(primary()).add_modifier(Modifier::BOLD)
@@ -211,6 +212,11 @@ fn render_fields(frame: &mut ratatui::Frame, area: Rect, app: &App) {
         } else {
             ""
         };
+        let rendered_value = if has_horizontal_adjust {
+            format!("◀ {} ▶", display_value)
+        } else {
+            format!("{}{}", display_value, suffix)
+        };
 
         let line = Line::from(vec![
             Span::styled("  ", Style::default()),
@@ -228,7 +234,7 @@ fn render_fields(frame: &mut ratatui::Frame, area: Rect, app: &App) {
                 format!("{:<width$}", field.key, width = key_width),
                 key_style,
             ),
-            Span::styled(format!("{}{}", display_value, suffix), value_style),
+            Span::styled(rendered_value, value_style),
         ]);
 
         items.push(ListItem::new(line));

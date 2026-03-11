@@ -9,7 +9,7 @@ use crate::utilsprites::RenderMetrics;
 use ::window::bitmaps::atlas::OutOfTextureSpace;
 use ::window::WindowOps;
 use anyhow::Context;
-use config::{Dimension, TabIndicator};
+use config::{ActivePaneIndicator, Dimension};
 use smol::Timer;
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
@@ -23,10 +23,9 @@ pub enum AllowImage {
     No,
 }
 
-const ACTIVE_GUTTER_WIDTH: f32 = 8.0;
 const ACTIVE_GUTTER_LEFT_PADDING: f32 = 8.0;
 
-fn tab_indicator_size_px(size: usize) -> f32 {
+fn active_pane_indicator_size_px(size: usize) -> f32 {
     size.max(1) as f32
 }
 
@@ -79,6 +78,29 @@ fn active_pane_left_indicator_segment(
     let h = (bounds.height() * used_rows as f32 / total_rows as f32).clamp(1.0, bounds.height());
 
     Some(euclid::rect(x, bounds.min_y(), w, h))
+}
+
+fn active_pane_left_pill_segment(
+    bounds: ::window::RectF,
+    width: f32,
+    left_padding: f32,
+) -> Option<::window::RectF> {
+    if bounds.width() <= 0.0 || bounds.height() <= 0.0 {
+        return None;
+    }
+
+    let padding = left_padding.max(0.0);
+    let available_width = (bounds.width() - padding).max(0.0);
+    if available_width <= 0.0 {
+        return None;
+    }
+
+    let w = width.max(1.0).min(available_width);
+    let x = bounds.min_x() + padding.min((bounds.width() - w).max(0.0));
+    let h = (bounds.height() * 0.15).clamp(1.0, bounds.height());
+    let y = bounds.min_y() + ((bounds.height() - h) / 2.0);
+
+    Some(euclid::rect(x, y, w, h))
 }
 
 fn toast_colors_for_palette(
@@ -539,10 +561,11 @@ impl crate::TermWindow {
         const TOP_PANE_MARGIN_WITH_TAB_BAR: f32 = 24.0;
         const TOP_PANE_MARGIN_NO_TAB_BAR: f32 = 14.0;
         const LOWER_PANE_MARGIN: f32 = 20.0;
-        let indicator_size = tab_indicator_size_px(self.config.tab_indicator_size);
+        let indicator_size =
+            active_pane_indicator_size_px(self.config.active_pane_indicator_size);
 
         // Draw dot indicator for the active pane when split
-        if self.config.tab_indicator == TabIndicator::Bell {
+        if self.config.active_pane_indicator == ActivePaneIndicator::Bell {
             if let Some((dot_x, dot_y, is_top_pane)) = active_pane_top_right {
                 let top_pane_margin = if self.show_tab_bar && !self.config.tab_bar_at_bottom {
                     TOP_PANE_MARGIN_WITH_TAB_BAR
@@ -578,7 +601,9 @@ impl crate::TermWindow {
                     .context("paint_split")?;
             }
 
-            if self.config.tab_indicator == TabIndicator::Gutter {
+            if self.config.active_pane_indicator == ActivePaneIndicator::Gutter
+                || self.config.active_pane_indicator == ActivePaneIndicator::Pill
+            {
                 if let Some((bounds, used_rows, total_rows)) = active_pane_indicator {
                     const ACTIVE_PANE_INDICATOR_ALPHA: f32 = 0.9;
                     let indicator_color = pane
@@ -588,13 +613,24 @@ impl crate::TermWindow {
                         .mul_alpha(ACTIVE_PANE_INDICATOR_ALPHA);
                     let indicator_left_padding = ACTIVE_GUTTER_LEFT_PADDING;
 
-                    if let Some(indicator) = active_pane_left_indicator_segment(
-                        bounds,
-                        ACTIVE_GUTTER_WIDTH.max(indicator_size),
-                        indicator_left_padding,
-                        used_rows,
-                        total_rows,
-                    ) {
+                    let segment = if self.config.active_pane_indicator == ActivePaneIndicator::Pill
+                    {
+                        active_pane_left_pill_segment(
+                            bounds,
+                            indicator_size,
+                            indicator_left_padding,
+                        )
+                    } else {
+                        active_pane_left_indicator_segment(
+                            bounds,
+                            indicator_size,
+                            indicator_left_padding,
+                            used_rows,
+                            total_rows,
+                        )
+                    };
+
+                    if let Some(indicator) = segment {
                         let cap_diameter = indicator.width().min(indicator.height());
                         let cap_radius = active_pane_gutter_radius(cap_diameter);
 
@@ -713,7 +749,7 @@ impl crate::TermWindow {
         use crate::tabbar::TabBarItem;
 
         // Fast path: skip mux lock entirely if no panes have unread bells
-        if self.config.tab_indicator != TabIndicator::Bell
+        if self.config.active_pane_indicator != ActivePaneIndicator::Bell
             || !self.pane_state.borrow().values().any(|s| s.has_unread_bell)
         {
             return Ok(());
@@ -757,7 +793,8 @@ impl crate::TermWindow {
         }];
 
         const DOT_RIGHT_MARGIN: f32 = 3.0;
-        let dot_size = tab_indicator_size_px(self.config.tab_indicator_size);
+        let dot_size =
+            active_pane_indicator_size_px(self.config.active_pane_indicator_size);
 
         for ui_item in &self.ui_items {
             if let crate::termwindow::UIItemType::TabBar(TabBarItem::Tab {
@@ -922,7 +959,9 @@ impl crate::TermWindow {
 mod tests {
     use super::{
         active_pane_gutter_radius, active_pane_indicator_bounds,
-        active_pane_left_indicator_segment, toast_colors_for_palette,
+        active_pane_indicator_size_px, active_pane_left_indicator_segment,
+        active_pane_left_pill_segment,
+        toast_colors_for_palette,
     };
     use wezterm_term::color::{ColorPalette, SrgbaTuple};
     use window::color::LinearRgba;
@@ -1029,5 +1068,23 @@ mod tests {
         let inner_overlap = inner.max_x() - inner_content_start;
 
         assert_eq!(leftmost_overlap, inner_overlap);
+    }
+
+    #[test]
+    fn indicator_size_px_has_minimum_of_one() {
+        assert_eq!(active_pane_indicator_size_px(0), 1.0);
+        assert_eq!(active_pane_indicator_size_px(1), 1.0);
+        assert_eq!(active_pane_indicator_size_px(6), 6.0);
+    }
+
+    #[test]
+    fn pill_segment_is_centered_and_uses_15_percent_height() {
+        let bounds = euclid::rect(10.0, 20.0, 100.0, 200.0);
+        let pill = active_pane_left_pill_segment(bounds, 8.0, 4.0).expect("pill");
+
+        assert!((pill.width() - 8.0).abs() < 0.001);
+        assert!((pill.height() - 30.0).abs() < 0.001);
+        assert!((pill.min_x() - 14.0).abs() < 0.001);
+        assert!((pill.min_y() - 105.0).abs() < 0.001);
     }
 }

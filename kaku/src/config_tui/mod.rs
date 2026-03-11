@@ -94,6 +94,12 @@ fn run_app(
                 KeyCode::Down | KeyCode::Char('j') => {
                     app.move_down();
                 }
+                KeyCode::Left => {
+                    app.adjust_selected_numeric(-1);
+                }
+                KeyCode::Right => {
+                    app.adjust_selected_numeric(1);
+                }
                 KeyCode::Enter | KeyCode::Char(' ') => {
                     app.start_edit();
                 }
@@ -341,29 +347,30 @@ impl App {
             },
             ConfigField {
                 section: "Behavior",
-                key: "Tab Indicator",
-                lua_key: "tab_indicator",
-                value: String::new(),
-                default: "Gutter".into(),
-                options: vec!["Bell", "Gutter"],
-                skip_write: false,
-            },
-            ConfigField {
-                section: "Behavior",
-                key: "Tab Indicator Size",
-                lua_key: "tab_indicator_size",
-                value: String::new(),
-                default: "8".into(),
-                options: vec![],
-                skip_write: false,
-            },
-            ConfigField {
-                section: "Behavior",
                 key: "Bell Dock Badge",
                 lua_key: "bell_dock_badge",
                 value: String::new(),
                 default: "Off".into(),
                 options: vec!["On", "Off"],
+                skip_write: false,
+            },
+            // P
+            ConfigField {
+                section: "Panes",
+                key: "Active Pane Indicator",
+                lua_key: "active_pane_indicator",
+                value: String::new(),
+                default: "Gutter".into(),
+                options: vec!["Bell", "Gutter", "Pill"],
+                skip_write: false,
+            },
+            ConfigField {
+                section: "Panes",
+                key: "Indicator Size",
+                lua_key: "active_pane_indicator_size",
+                value: String::new(),
+                default: "8".into(),
+                options: vec![],
                 skip_write: false,
             },
         ];
@@ -618,7 +625,7 @@ impl App {
                     Some(raw.to_string())
                 }
             }
-            "font_size" | "line_height" | "tab_indicator_size" => {
+            "font_size" | "line_height" | "active_pane_indicator_size" => {
                 if Self::is_number_literal(raw) {
                     Some(raw.to_string())
                 } else {
@@ -638,11 +645,13 @@ impl App {
                     None
                 }
             }
-            "tab_indicator" => {
+            "active_pane_indicator" => {
                 if raw.eq_ignore_ascii_case("bell") || raw == "true" {
                     Some("Bell".into())
                 } else if raw.eq_ignore_ascii_case("gutter") || raw == "false" {
                     Some("Gutter".into())
+                } else if raw.eq_ignore_ascii_case("pill") {
+                    Some("Pill".into())
                 } else {
                     None
                 }
@@ -765,6 +774,10 @@ impl App {
 
     fn start_edit(&mut self) {
         let field = &self.fields[self.selected];
+        if Self::numeric_step_for(field.lua_key).is_some() {
+            return;
+        }
+
         if field.has_options() {
             if field.options.len() == 2 {
                 // Binary field: toggle directly without a popup.
@@ -853,6 +866,62 @@ impl App {
         // Same: explicit user choice overrides the skip_write protection.
         self.fields[self.selected].skip_write = false;
         self.mode = Mode::Normal;
+        self.dirty = true;
+    }
+
+    fn numeric_step_for(lua_key: &str) -> Option<f64> {
+        match lua_key {
+            "font_size" => Some(1.0),
+            "line_height" => Some(0.05),
+            "active_pane_indicator_size" => Some(1.0),
+            _ => None,
+        }
+    }
+
+    fn format_numeric_value(lua_key: &str, value: f64) -> String {
+        if lua_key == "line_height" {
+            let mut s = format!("{value:.2}");
+            while s.contains('.') && s.ends_with('0') {
+                s.pop();
+            }
+            if s.ends_with('.') {
+                s.pop();
+            }
+            s
+        } else {
+            format!("{}", value.round() as i64)
+        }
+    }
+
+    fn adjust_selected_numeric(&mut self, direction: i32) {
+        if direction == 0 {
+            return;
+        }
+
+        let idx = self.selected;
+        let lua_key = self.fields[idx].lua_key;
+        let Some(step) = Self::numeric_step_for(lua_key) else {
+            return;
+        };
+
+        let current = self.display_value(&self.fields[idx]);
+        let Ok(mut value) = current.parse::<f64>() else {
+            return;
+        };
+
+        value += step * direction as f64;
+        let min_value = if lua_key == "line_height" { 0.05 } else { 1.0 };
+        if value < min_value {
+            value = min_value;
+        }
+
+        let formatted = Self::format_numeric_value(lua_key, value);
+        if self.fields[idx].value == formatted {
+            return;
+        }
+
+        self.fields[idx].value = formatted;
+        self.fields[idx].skip_write = false;
         self.dirty = true;
     }
 
@@ -1130,7 +1199,7 @@ impl App {
             | "line_height"
             | "window_background_opacity"
             | "split_pane_gap"
-            | "tab_indicator_size" => field.value.clone(),
+            | "active_pane_indicator_size" => field.value.clone(),
             "copy_on_select"
             | "enable_scroll_bar"
             | "tab_close_confirmation"
@@ -1142,7 +1211,7 @@ impl App {
                     "false".into()
                 }
             }
-            "tab_indicator" => {
+            "active_pane_indicator" => {
                 let effective = if field.value.is_empty() {
                     &field.default
                 } else {
@@ -1348,52 +1417,56 @@ mod tests {
     }
 
     #[test]
-    fn tab_indicator_field_defaults_to_gutter() {
+    fn active_pane_indicator_field_defaults_to_gutter() {
         let app = test_app();
         let field = app
             .fields
             .iter()
-            .find(|f| f.lua_key == "tab_indicator")
-            .expect("tab_indicator field to exist");
+            .find(|f| f.lua_key == "active_pane_indicator")
+            .expect("active_pane_indicator field to exist");
 
         assert_eq!(field.default, "Gutter");
         assert_eq!(app.to_lua_value(field), "'Gutter'");
     }
 
     #[test]
-    fn normalize_tab_indicator_values() {
+    fn normalize_active_pane_indicator_values() {
         assert_eq!(
-            App::normalize_value("tab_indicator", "Bell"),
+            App::normalize_value("active_pane_indicator", "Bell"),
             Some("Bell".into())
         );
         assert_eq!(
-            App::normalize_value("tab_indicator", "gutter"),
+            App::normalize_value("active_pane_indicator", "gutter"),
             Some("Gutter".into())
+        );
+        assert_eq!(
+            App::normalize_value("active_pane_indicator", "Pill"),
+            Some("Pill".into())
         );
         // Backward-compatible bool mapping.
         assert_eq!(
-            App::normalize_value("tab_indicator", "true"),
+            App::normalize_value("active_pane_indicator", "true"),
             Some("Bell".into())
         );
         assert_eq!(
-            App::normalize_value("tab_indicator", "false"),
+            App::normalize_value("active_pane_indicator", "false"),
             Some("Gutter".into())
         );
     }
 
     #[test]
-    fn tab_indicator_size_serializes_as_number() {
+    fn active_pane_indicator_size_serializes_as_number() {
         let mut app = test_app();
         let idx = app
             .fields
             .iter()
-            .position(|f| f.lua_key == "tab_indicator_size")
-            .expect("tab_indicator_size field to exist");
+            .position(|f| f.lua_key == "active_pane_indicator_size")
+            .expect("active_pane_indicator_size field to exist");
         app.fields[idx].value = "12".to_string();
 
         assert_eq!(app.to_lua_value(&app.fields[idx]), "12");
         assert_eq!(
-            App::normalize_value("tab_indicator_size", "10"),
+            App::normalize_value("active_pane_indicator_size", "10"),
             Some("10".into())
         );
     }
@@ -1488,6 +1561,60 @@ mod tests {
         assert!(matches!(app.mode, Mode::Selecting));
         assert_eq!(app.select_index, 0);
         assert!(!app.dirty);
+    }
+
+    #[test]
+    fn numeric_fields_use_left_right_adjustment_instead_of_editing() {
+        let mut app = test_app();
+        let idx = app
+            .fields
+            .iter()
+            .position(|f| f.lua_key == "font_size")
+            .expect("font_size field to exist");
+        app.selected = idx;
+
+        app.start_edit();
+
+        assert!(matches!(app.mode, Mode::Normal));
+        assert!(!app.dirty);
+
+        app.adjust_selected_numeric(1);
+        assert_eq!(app.fields[idx].value, "18");
+        assert!(app.dirty);
+    }
+
+    #[test]
+    fn numeric_adjustment_uses_expected_steps_and_mins() {
+        let mut app = test_app();
+
+        let font_idx = app
+            .fields
+            .iter()
+            .position(|f| f.lua_key == "font_size")
+            .expect("font_size field to exist");
+        app.selected = font_idx;
+        app.adjust_selected_numeric(-100);
+        assert_eq!(app.fields[font_idx].value, "1");
+
+        let line_idx = app
+            .fields
+            .iter()
+            .position(|f| f.lua_key == "line_height")
+            .expect("line_height field to exist");
+        app.selected = line_idx;
+        app.adjust_selected_numeric(1);
+        assert_eq!(app.fields[line_idx].value, "1.33");
+        app.adjust_selected_numeric(-1000);
+        assert_eq!(app.fields[line_idx].value, "0.05");
+
+        let indicator_idx = app
+            .fields
+            .iter()
+            .position(|f| f.lua_key == "active_pane_indicator_size")
+            .expect("active_pane_indicator_size field to exist");
+        app.selected = indicator_idx;
+        app.adjust_selected_numeric(-100);
+        assert_eq!(app.fields[indicator_idx].value, "1");
     }
 
     #[test]
