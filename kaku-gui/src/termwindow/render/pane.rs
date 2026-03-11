@@ -290,10 +290,7 @@ impl crate::TermWindow {
                     layers,
                     0,
                     background_rect,
-                    palette
-                        .background
-                        .to_linear()
-                        .mul_alpha(window_opacity),
+                    palette.background.to_linear().mul_alpha(window_opacity),
                 )
                 .context("filled_rectangle")?;
             quad.set_hsv(if pos.is_active {
