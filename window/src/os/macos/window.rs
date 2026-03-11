@@ -4818,7 +4818,35 @@ impl WindowView {
                 // event that will in turn trigger an invalidation
                 // and a repaint.
                 inner.screen_changed = false;
+
+                // Check if the backing scale factor actually changed.
+                // Only hide content during real DPI transitions to avoid
+                // unnecessary flicker on same-DPI screen moves.
+                let scale_changed = inner.window.as_ref().map_or(false, |w| {
+                    let window = w.load();
+                    if window.is_null() {
+                        false
+                    } else {
+                        let scale: CGFloat = unsafe { msg_send![*window, backingScaleFactor] };
+                        if scale > 0.0 {
+                            let old_dpi = inner.last_reported_dpi.unwrap_or(0);
+                            let new_dpi = (crate::DEFAULT_DPI * scale) as usize;
+                            old_dpi != 0 && old_dpi != new_dpi
+                        } else {
+                            false
+                        }
+                    }
+                });
+
                 drop(inner);
+
+                if scale_changed {
+                    // Briefly suppress content rendering to avoid showing
+                    // a frame with stale font metrics during the DPI transition.
+                    this.transition_hide_until
+                        .set(Some(Instant::now() + Duration::from_millis(ZOOM_HIDE_CONTENT_MS)));
+                }
+
                 Self::did_resize(view, sel, nil);
                 return;
             }

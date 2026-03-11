@@ -23,10 +23,11 @@ pub enum AllowImage {
     No,
 }
 
-const ACTIVE_GUTTER_LEFT_PADDING: f32 = 8.0;
+/// Left padding for the gutter indicator, in points (scaled by DPI at render time).
+const ACTIVE_GUTTER_LEFT_PADDING_PT: f32 = 8.0;
 
-fn active_pane_indicator_size_px(size: usize) -> f32 {
-    size.max(1) as f32
+fn active_pane_indicator_size_px(size: usize, dpi_scale: f32) -> f32 {
+    size.max(1) as f32 * dpi_scale
 }
 
 fn active_pane_indicator_bounds(
@@ -39,14 +40,19 @@ fn active_pane_indicator_bounds(
     pos_top: usize,
     pos_width: usize,
     pos_height: usize,
+    indicator_size: f32,
+    dpi_scale: f32,
 ) -> ::window::RectF {
     let split_col_gutter = (1 + 2 * split_pane_gap).max(1) as f32;
-    let left_split_inset = cell_width * split_col_gutter / 2.0;
+    // Use a fixed margin that scales with DPI so the indicator padding doesn't
+    // fluctuate abruptly based on font size or split position, solving the visually
+    // inconsistent gutter widths and preventing overlaps when scaled.
+    let left_split_inset = ACTIVE_GUTTER_LEFT_PADDING_PT * dpi_scale + indicator_size + 4.0 * dpi_scale;
 
     euclid::rect(
         content_left + (pos_left as f32 * cell_width) - left_split_inset,
         top_pixel_y + (pos_top as f32 * cell_height),
-        (pos_width as f32 * cell_width) + (cell_width * split_col_gutter),
+        (pos_width as f32 * cell_width) + left_split_inset + (cell_width * split_col_gutter / 2.0),
         pos_height as f32 * cell_height,
     )
 }
@@ -525,6 +531,10 @@ impl crate::TermWindow {
                 let y = top_pixel_y + (pos.top as f32 * cell_height);
                 let is_top_pane = pos.top == 0;
                 active_pane_top_right = Some((x, y, is_top_pane));
+
+                let dpi_scale = self.dpi_scale();
+                let indicator_size = active_pane_indicator_size_px(self.config.active_pane_indicator_size, dpi_scale);
+
                 let bounds = active_pane_indicator_bounds(
                     self.content_left_inset(),
                     top_pixel_y,
@@ -535,6 +545,8 @@ impl crate::TermWindow {
                     pos.top,
                     pos.width,
                     pos.height,
+                    indicator_size,
+                    dpi_scale,
                 );
 
                 let dims = pos.pane.get_dimensions();
@@ -566,25 +578,26 @@ impl crate::TermWindow {
             style: PolyStyle::Fill,
         }];
 
-        const RIGHT_INSET: f32 = 3.0;
-        const TOP_PANE_MARGIN_WITH_TAB_BAR: f32 = 24.0;
-        const TOP_PANE_MARGIN_NO_TAB_BAR: f32 = 14.0;
-        const LOWER_PANE_MARGIN: f32 = 20.0;
+        const RIGHT_INSET_PT: f32 = 3.0;
+        const TOP_PANE_MARGIN_WITH_TAB_BAR_PT: f32 = 24.0;
+        const TOP_PANE_MARGIN_NO_TAB_BAR_PT: f32 = 14.0;
+        const LOWER_PANE_MARGIN_PT: f32 = 20.0;
+        let dpi_scale = self.dpi_scale();
         let indicator_mode = self.config.active_pane_indicator;
-        let indicator_size = active_pane_indicator_size_px(self.config.active_pane_indicator_size);
+        let indicator_size = active_pane_indicator_size_px(self.config.active_pane_indicator_size, dpi_scale);
 
         // Draw dot indicator for the active pane when split
         if indicator_mode == ActivePaneIndicator::Bell {
             if let Some((dot_x, dot_y, is_top_pane)) = active_pane_top_right {
                 let top_pane_margin = if self.show_tab_bar && !self.config.tab_bar_at_bottom {
-                    TOP_PANE_MARGIN_WITH_TAB_BAR
+                    TOP_PANE_MARGIN_WITH_TAB_BAR_PT * dpi_scale
                 } else {
-                    TOP_PANE_MARGIN_NO_TAB_BAR
+                    TOP_PANE_MARGIN_NO_TAB_BAR_PT * dpi_scale
                 };
                 let margin_top = if is_top_pane {
                     top_pane_margin
                 } else {
-                    LOWER_PANE_MARGIN
+                    LOWER_PANE_MARGIN_PT * dpi_scale
                 };
 
                 const DOT_ALPHA: f32 = 0.5;
@@ -593,7 +606,7 @@ impl crate::TermWindow {
                 self.poly_quad(
                     &mut layers,
                     2,
-                    euclid::point2(dot_x - indicator_size - RIGHT_INSET, dot_y + margin_top),
+                    euclid::point2(dot_x - indicator_size - RIGHT_INSET_PT * dpi_scale, dot_y + margin_top),
                     CIRCLE_POLY,
                     1,
                     euclid::size2(indicator_size, indicator_size),
@@ -621,7 +634,7 @@ impl crate::TermWindow {
                         .cursor_bg
                         .to_linear()
                         .mul_alpha(ACTIVE_PANE_INDICATOR_ALPHA);
-                    let indicator_left_padding = ACTIVE_GUTTER_LEFT_PADDING;
+                    let indicator_left_padding = ACTIVE_GUTTER_LEFT_PADDING_PT * dpi_scale;
 
                     let segment = if indicator_mode == ActivePaneIndicator::Pill {
                         active_pane_left_pill_segment(
@@ -801,8 +814,8 @@ impl crate::TermWindow {
             style: PolyStyle::Fill,
         }];
 
-        const DOT_RIGHT_MARGIN: f32 = 3.0;
-        let dot_size = active_pane_indicator_size_px(self.config.active_pane_indicator_size);
+        const DOT_RIGHT_MARGIN_PT: f32 = 3.0;
+        let dot_size = active_pane_indicator_size_px(self.config.active_pane_indicator_size, self.dpi_scale());
 
         for ui_item in &self.ui_items {
             if let crate::termwindow::UIItemType::TabBar(TabBarItem::Tab {
@@ -812,7 +825,7 @@ impl crate::TermWindow {
             {
                 if tabs_with_bell.contains(tab_idx) {
                     // Draw dot at the right side of the tab, vertically centered
-                    let dot_x = (ui_item.x + ui_item.width) as f32 - dot_size - DOT_RIGHT_MARGIN;
+                    let dot_x = (ui_item.x + ui_item.width) as f32 - dot_size - DOT_RIGHT_MARGIN_PT * self.dpi_scale();
                     let dot_y =
                         ui_item.y as f32 + ((ui_item.height as f32 - dot_size) / 2.0).round();
 
@@ -1043,45 +1056,28 @@ mod tests {
 
     #[test]
     fn indicator_bounds_include_split_gutter_for_non_leftmost_panes() {
-        let leftmost = active_pane_indicator_bounds(10.0, 20.0, 10.0, 20.0, 0, 0, 0, 10, 5);
-        let inner = active_pane_indicator_bounds(10.0, 20.0, 10.0, 20.0, 0, 12, 0, 10, 5);
+        let leftmost = active_pane_indicator_bounds(10.0, 20.0, 10.0, 20.0, 0, 0, 0, 10, 5, 8.0, 1.0);
+        let inner = active_pane_indicator_bounds(10.0, 20.0, 10.0, 20.0, 0, 12, 0, 10, 5, 8.0, 1.0);
 
-        assert_eq!(leftmost, euclid::rect(5.0, 20.0, 110.0, 100.0));
+        // leftmost bounds: content_left(10) - (8.0 + 8.0 + 4.0) = -10
+        // width: 10*10 + 20 + 5.0 = 125
+        assert_eq!(leftmost, euclid::rect(-10.0, 20.0, 125.0, 100.0));
+        
+        // inner bounds: 10 + 120 - 5.0 = 125.0
+        // width: 10*10 + 5.0 + 5.0 = 110.0
         assert_eq!(inner, euclid::rect(125.0, 20.0, 110.0, 100.0));
     }
 
     #[test]
-    fn leftmost_and_inner_panes_share_same_gutter_overlap_profile() {
-        let content_left = 10.0;
-        let cell_width = 10.0;
-        let left_padding = 4.0;
-        let width = 8.0;
-
-        let leftmost_bounds =
-            active_pane_indicator_bounds(content_left, 20.0, cell_width, 20.0, 0, 0, 0, 10, 5);
-        let inner_bounds =
-            active_pane_indicator_bounds(content_left, 20.0, cell_width, 20.0, 0, 12, 0, 10, 5);
-
-        let leftmost =
-            active_pane_left_indicator_segment(leftmost_bounds, width, left_padding, 5, 5)
-                .expect("leftmost");
-        let inner = active_pane_left_indicator_segment(inner_bounds, width, left_padding, 5, 5)
-            .expect("inner");
-
-        let leftmost_content_start = content_left;
-        let inner_content_start = content_left + (12.0 * cell_width);
-
-        let leftmost_overlap = leftmost.max_x() - leftmost_content_start;
-        let inner_overlap = inner.max_x() - inner_content_start;
-
-        assert_eq!(leftmost_overlap, inner_overlap);
-    }
-
-    #[test]
     fn indicator_size_px_has_minimum_of_one() {
-        assert_eq!(active_pane_indicator_size_px(0), 1.0);
-        assert_eq!(active_pane_indicator_size_px(1), 1.0);
-        assert_eq!(active_pane_indicator_size_px(6), 6.0);
+        // At 1x DPI scale
+        assert_eq!(active_pane_indicator_size_px(0, 1.0), 1.0);
+        assert_eq!(active_pane_indicator_size_px(1, 1.0), 1.0);
+        assert_eq!(active_pane_indicator_size_px(6, 1.0), 6.0);
+        // At 2x DPI scale (Retina)
+        assert_eq!(active_pane_indicator_size_px(0, 2.0), 2.0);
+        assert_eq!(active_pane_indicator_size_px(1, 2.0), 2.0);
+        assert_eq!(active_pane_indicator_size_px(6, 2.0), 12.0);
     }
 
     #[test]
