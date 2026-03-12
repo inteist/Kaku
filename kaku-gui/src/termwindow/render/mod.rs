@@ -328,6 +328,14 @@ impl crate::TermWindow {
         Ok(quad)
     }
 
+    /// Returns the DPI scale factor relative to the default DPI (72 on macOS, 96 elsewhere).
+    /// Multiply raw pixel constants by this to maintain consistent visual size across
+    /// screens with different DPI (e.g. macOS "Default" vs "More Space" display scaling).
+    pub fn dpi_scale(&self) -> f32 {
+        let base_dpi = if cfg!(target_os = "macos") { 72.0 } else { 96.0 };
+        self.dimensions.dpi as f32 / base_dpi
+    }
+
     pub fn min_scroll_bar_height(&self) -> f32 {
         self.config
             .min_scroll_bar_height
@@ -350,6 +358,7 @@ impl crate::TermWindow {
             .window_padding
             .left
             .evaluate_as_pixels(h_context);
+
         let padding_right = self.config.window_padding.right;
         let tab_bar_height = if self.show_tab_bar {
             self.tab_bar_pixel_height().unwrap_or(0.) as usize
@@ -387,6 +396,25 @@ impl crate::TermWindow {
             VerticalWindowContentAlignment::Center => (vertical_gap / 2.).round(),
             VerticalWindowContentAlignment::Bottom => vertical_gap,
         };
+
+        log::trace!(
+            "padding_left_top: dpi={} cell_w={} padding_left={} left_gap={} \
+             padding_top={} top_gap={} h_gap={} v_gap={} dims={}x{} term={}x{} \
+             pad_cfg={:?}",
+            self.dimensions.dpi,
+            self.render_metrics.cell_size.width,
+            padding_left,
+            left_gap,
+            padding_top,
+            top_gap,
+            horizontal_gap,
+            vertical_gap,
+            self.dimensions.pixel_width,
+            self.dimensions.pixel_height,
+            self.terminal_size.pixel_width,
+            self.terminal_size.pixel_height,
+            self.config.window_padding.left,
+        );
 
         (padding_left + left_gap, padding_top + top_gap)
     }

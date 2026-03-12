@@ -133,15 +133,20 @@ pub fn is_light_color(color: &wezterm_term::color::SrgbaTuple) -> bool {
 }
 
 fn ai_toast_lifetime_ms(message: &str) -> u64 {
+    const LONG_TOAST_MATCH_TERMS: &[&str] = &[
+        "checking",
+        "analy",
+        "fail",
+        "error",
+        "missing",
+        "unavailable",
+        "not found",
+    ];
+
     let lower = message.to_ascii_lowercase();
-    if lower.contains("checking")
-        || lower.contains("analy")
-        || lower.contains("fail")
-        || lower.contains("error")
-        || lower.contains("missing")
-        || lower.contains("unavailable")
-        || lower.contains("not found")
-    {
+    let long_display = LONG_TOAST_MATCH_TERMS.iter().any(|kw| lower.contains(kw));
+
+    if long_display {
         3000
     } else {
         2000

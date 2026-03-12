@@ -9,7 +9,7 @@ use crate::utilsprites::RenderMetrics;
 use ::window::bitmaps::atlas::OutOfTextureSpace;
 use ::window::WindowOps;
 use anyhow::Context;
-use config::Dimension;
+use config::{ActivePaneIndicator, Dimension};
 use smol::Timer;
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
@@ -23,7 +23,91 @@ pub enum AllowImage {
     No,
 }
 
-const STATUS_DOT_SIZE: f32 = 12.0;
+/// Left padding for the gutter indicator, in points (scaled by DPI at render time).
+const ACTIVE_GUTTER_LEFT_PADDING_PT: f32 = 8.0;
+
+fn active_pane_indicator_size_px(size: usize, dpi_scale: f32) -> f32 {
+    size.max(1) as f32 * dpi_scale
+}
+
+fn active_pane_indicator_bounds(
+    content_left: f32,
+    top_pixel_y: f32,
+    cell_width: f32,
+    cell_height: f32,
+    split_pane_gap: usize,
+    pos_left: usize,
+    pos_top: usize,
+    pos_width: usize,
+    pos_height: usize,
+    indicator_size: f32,
+    dpi_scale: f32,
+) -> ::window::RectF {
+    let split_col_gutter = (1 + 2 * split_pane_gap).max(1) as f32;
+    // Use a fixed margin that scales with DPI so the indicator padding doesn't
+    // fluctuate abruptly based on font size or split position, solving the visually
+    // inconsistent gutter widths and preventing overlaps when scaled.
+    let left_split_inset = ACTIVE_GUTTER_LEFT_PADDING_PT * dpi_scale + indicator_size + 4.0 * dpi_scale;
+
+    euclid::rect(
+        content_left + (pos_left as f32 * cell_width) - left_split_inset,
+        top_pixel_y + (pos_top as f32 * cell_height),
+        (pos_width as f32 * cell_width) + left_split_inset + (cell_width * split_col_gutter / 2.0),
+        pos_height as f32 * cell_height,
+    )
+}
+
+fn active_pane_gutter_radius(width: f32) -> f32 {
+    (width / 2.0).max(0.0)
+}
+
+fn active_pane_left_indicator_segment(
+    bounds: ::window::RectF,
+    width: f32,
+    left_padding: f32,
+    used_rows: usize,
+    total_rows: usize,
+) -> Option<::window::RectF> {
+    if bounds.width() <= 0.0 || bounds.height() <= 0.0 || total_rows == 0 {
+        return None;
+    }
+
+    let used_rows = used_rows.clamp(1, total_rows);
+    let padding = left_padding.max(0.0);
+    let available_width = (bounds.width() - padding).max(0.0);
+    if available_width <= 0.0 {
+        return None;
+    }
+
+    let w = width.max(1.0).min(available_width);
+    let x = bounds.min_x() + padding.min((bounds.width() - w).max(0.0));
+    let h = (bounds.height() * used_rows as f32 / total_rows as f32).clamp(1.0, bounds.height());
+
+    Some(euclid::rect(x, bounds.min_y(), w, h))
+}
+
+fn active_pane_left_pill_segment(
+    bounds: ::window::RectF,
+    width: f32,
+    left_padding: f32,
+) -> Option<::window::RectF> {
+    if bounds.width() <= 0.0 || bounds.height() <= 0.0 {
+        return None;
+    }
+
+    let padding = left_padding.max(0.0);
+    let available_width = (bounds.width() - padding).max(0.0);
+    if available_width <= 0.0 {
+        return None;
+    }
+
+    let w = width.max(1.0).min(available_width);
+    let x = bounds.min_x() + padding.min((bounds.width() - w).max(0.0));
+    let h = (bounds.height() * 0.15).clamp(1.0, bounds.height());
+    let y = bounds.min_y() + ((bounds.height() - h) / 2.0);
+
+    Some(euclid::rect(x, y, w, h))
+}
 
 fn toast_colors_for_palette(
     palette: &wezterm_term::color::ColorPalette,
@@ -42,6 +126,63 @@ fn toast_colors_for_palette(
             LinearRgba(1.0, 1.0, 1.0, alpha),
         )
     }
+}
+
+fn transparent_strip_rects(
+    window_width: f32,
+    window_height: f32,
+    top_fill_height: f32,
+    bottom_fill_height: f32,
+    right_fill_width: f32,
+    top_tab_bar_height: f32,
+    bottom_tab_bar_height: f32,
+) -> (
+    Option<::window::RectF>,
+    Option<::window::RectF>,
+    Option<::window::RectF>,
+) {
+    let top = if top_fill_height > 0.0 {
+        Some(euclid::rect(
+            0.0,
+            0.0,
+            window_width,
+            top_fill_height.min(window_height),
+        ))
+    } else {
+        None
+    };
+
+    let bottom = if bottom_fill_height > 0.0 {
+        let clamped_height = bottom_fill_height.min(window_height);
+        Some(euclid::rect(
+            0.0,
+            (window_height - clamped_height).max(0.0),
+            window_width,
+            clamped_height,
+        ))
+    } else {
+        None
+    };
+
+    let right = if right_fill_width > 0.0 {
+        let clamped_width = right_fill_width.min(window_width);
+        let right_fill_y = (top_fill_height + top_tab_bar_height).min(window_height);
+        let right_fill_height = (window_height
+            - right_fill_y
+            - bottom_fill_height.min(window_height)
+            - bottom_tab_bar_height.min(window_height))
+        .max(0.0);
+        Some(euclid::rect(
+            window_width - clamped_width,
+            right_fill_y,
+            clamped_width,
+            right_fill_height,
+        ))
+    } else {
+        None
+    };
+
+    (top, bottom, right)
 }
 
 impl crate::TermWindow {
@@ -208,8 +349,8 @@ impl crate::TermWindow {
 
         let panes = self.get_panes_to_render();
         let focused = self.focused.is_some();
-        let window_is_transparent =
-            !self.window_background.is_empty() || self.config.window_background_opacity != 1.0;
+        let window_opacity = self.config.window_background_opacity;
+        let window_is_transparent = !self.window_background.is_empty() || window_opacity < 1.0;
 
         let start = Instant::now();
         let gl_state = self.render_state.as_ref().unwrap();
@@ -257,7 +398,7 @@ impl crate::TermWindow {
                     self.palette().background
                 }
                 .to_linear()
-                .mul_alpha(self.config.window_background_opacity);
+                .mul_alpha(window_opacity);
                 let border = self.get_os_border();
                 let tab_bar_height = if self.show_tab_bar {
                     self.tab_bar_pixel_height()
@@ -267,93 +408,45 @@ impl crate::TermWindow {
                 };
                 let (_, padding_bottom) = self.effective_vertical_padding();
                 let padding_bottom = padding_bottom as f32;
-                let top_fill_height = border.top.get() as f32
-                    + if self.config.tab_bar_at_bottom {
-                        0.0
-                    } else {
-                        tab_bar_height
-                    };
-                let bottom_fill_height = padding_bottom
-                    + border.bottom.get() as f32
-                    + if self.config.tab_bar_at_bottom {
-                        tab_bar_height
-                    } else {
-                        0.0
-                    };
+                let top_fill_height = border.top.get() as f32;
+                let bottom_fill_height = padding_bottom + border.bottom.get() as f32;
+                let top_tab_bar_height = if self.show_tab_bar && !self.config.tab_bar_at_bottom {
+                    tab_bar_height
+                } else {
+                    0.0
+                };
+                let bottom_tab_bar_height = if self.show_tab_bar && self.config.tab_bar_at_bottom {
+                    tab_bar_height
+                } else {
+                    0.0
+                };
                 let right_fill_width =
                     self.effective_right_padding(&self.config) as f32 + border.right.get() as f32;
-                let left_fill_width =
-                    self.config
-                        .window_padding
-                        .left
-                        .evaluate_as_pixels(DimensionContext {
-                            dpi: self.dimensions.dpi as f32,
-                            pixel_max: self.terminal_size.pixel_width as f32,
-                            pixel_cell: self.render_metrics.cell_size.width as f32,
-                        })
-                        + border.left.get() as f32;
                 let window_width = self.dimensions.pixel_width as f32;
                 let window_height = self.dimensions.pixel_height as f32;
+                let (top_rect, bottom_rect, right_rect) = transparent_strip_rects(
+                    window_width,
+                    window_height,
+                    top_fill_height,
+                    bottom_fill_height,
+                    right_fill_width,
+                    top_tab_bar_height,
+                    bottom_tab_bar_height,
+                );
 
-                if top_fill_height > 0.0 {
-                    self.filled_rectangle(
-                        &mut layers,
-                        0,
-                        euclid::rect(0.0, 0.0, window_width, top_fill_height.min(window_height)),
-                        strip_background,
-                    )
-                    .context("filled_rectangle for transparent top strip")?;
+                if let Some(rect) = top_rect {
+                    self.filled_rectangle(&mut layers, 0, rect, strip_background)
+                        .context("filled_rectangle for transparent top strip")?;
                 }
 
-                if bottom_fill_height > 0.0 {
-                    let clamped_height = bottom_fill_height.min(window_height);
-                    self.filled_rectangle(
-                        &mut layers,
-                        0,
-                        euclid::rect(
-                            0.0,
-                            (window_height - clamped_height).max(0.0),
-                            window_width,
-                            clamped_height,
-                        ),
-                        strip_background,
-                    )
-                    .context("filled_rectangle for transparent bottom strip")?;
+                if let Some(rect) = bottom_rect {
+                    self.filled_rectangle(&mut layers, 0, rect, strip_background)
+                        .context("filled_rectangle for transparent bottom strip")?;
                 }
 
-                if right_fill_width > 0.0 {
-                    let clamped_width = right_fill_width.min(window_width);
-                    let right_fill_y = top_fill_height.min(window_height);
-                    let right_fill_height =
-                        (window_height - right_fill_y - bottom_fill_height.min(window_height))
-                            .max(0.0);
-                    self.filled_rectangle(
-                        &mut layers,
-                        0,
-                        euclid::rect(
-                            window_width - clamped_width,
-                            right_fill_y,
-                            clamped_width,
-                            right_fill_height,
-                        ),
-                        strip_background,
-                    )
-                    .context("filled_rectangle for transparent right strip")?;
-                }
-
-                if left_fill_width > 0.0 {
-                    let clamped_width = left_fill_width.min(window_width);
-                    let left_fill_y = top_fill_height.min(window_height);
-                    let left_fill_height =
-                        (window_height - left_fill_y - bottom_fill_height.min(window_height))
-                            .max(0.0);
-                    self.filled_rectangle(
-                        &mut layers,
-                        0,
-                        euclid::rect(0.0, left_fill_y, clamped_width, left_fill_height),
-                        strip_background,
-                    )
-                    .context("filled_rectangle for transparent left strip")?;
+                if let Some(rect) = right_rect {
+                    self.filled_rectangle(&mut layers, 0, rect, strip_background)
+                        .context("filled_rectangle for transparent right strip")?;
                 }
             }
             _ => {
@@ -371,7 +464,7 @@ impl crate::TermWindow {
                 self.palette().background
             }
             .to_linear()
-            .mul_alpha(self.config.window_background_opacity);
+            .mul_alpha(window_opacity);
 
             self.filled_rectangle(
                 &mut layers,
@@ -414,6 +507,7 @@ impl crate::TermWindow {
 
         let num_panes = panes.len();
         let mut active_pane_top_right: Option<(f32, f32, bool)> = None;
+        let mut active_pane_indicator: Option<(::window::RectF, usize, usize)> = None;
 
         for pos in panes {
             if pos.is_active && num_panes > 1 {
@@ -437,6 +531,30 @@ impl crate::TermWindow {
                 let y = top_pixel_y + (pos.top as f32 * cell_height);
                 let is_top_pane = pos.top == 0;
                 active_pane_top_right = Some((x, y, is_top_pane));
+
+                let dpi_scale = self.dpi_scale();
+                let indicator_size = active_pane_indicator_size_px(self.config.active_pane_indicator_size, dpi_scale);
+
+                let bounds = active_pane_indicator_bounds(
+                    self.content_left_inset(),
+                    top_pixel_y,
+                    cell_width,
+                    cell_height,
+                    self.config.split_pane_gap as usize,
+                    pos.left,
+                    pos.top,
+                    pos.width,
+                    pos.height,
+                    indicator_size,
+                    dpi_scale,
+                );
+
+                let dims = pos.pane.get_dimensions();
+                let cursor = pos.pane.get_cursor_position();
+                let used_rows = (cursor.y - dims.physical_top + 1).max(1) as usize;
+                let total_rows = pos.height.max(1);
+
+                active_pane_indicator = Some((bounds, used_rows.min(total_rows), total_rows));
             }
             if pos.is_active {
                 if self.get_modal().is_none() {
@@ -460,37 +578,42 @@ impl crate::TermWindow {
             style: PolyStyle::Fill,
         }];
 
-        const RIGHT_INSET: f32 = 3.0;
-        const TOP_PANE_MARGIN_WITH_TAB_BAR: f32 = 24.0;
-        const TOP_PANE_MARGIN_NO_TAB_BAR: f32 = 14.0;
-        const LOWER_PANE_MARGIN: f32 = 20.0;
+        const RIGHT_INSET_PT: f32 = 3.0;
+        const TOP_PANE_MARGIN_WITH_TAB_BAR_PT: f32 = 24.0;
+        const TOP_PANE_MARGIN_NO_TAB_BAR_PT: f32 = 14.0;
+        const LOWER_PANE_MARGIN_PT: f32 = 20.0;
+        let dpi_scale = self.dpi_scale();
+        let indicator_mode = self.config.active_pane_indicator;
+        let indicator_size = active_pane_indicator_size_px(self.config.active_pane_indicator_size, dpi_scale);
 
         // Draw dot indicator for the active pane when split
-        if let Some((dot_x, dot_y, is_top_pane)) = active_pane_top_right {
-            let top_pane_margin = if self.show_tab_bar && !self.config.tab_bar_at_bottom {
-                TOP_PANE_MARGIN_WITH_TAB_BAR
-            } else {
-                TOP_PANE_MARGIN_NO_TAB_BAR
-            };
-            let margin_top = if is_top_pane {
-                top_pane_margin
-            } else {
-                LOWER_PANE_MARGIN
-            };
+        if indicator_mode == ActivePaneIndicator::Bell {
+            if let Some((dot_x, dot_y, is_top_pane)) = active_pane_top_right {
+                let top_pane_margin = if self.show_tab_bar && !self.config.tab_bar_at_bottom {
+                    TOP_PANE_MARGIN_WITH_TAB_BAR_PT * dpi_scale
+                } else {
+                    TOP_PANE_MARGIN_NO_TAB_BAR_PT * dpi_scale
+                };
+                let margin_top = if is_top_pane {
+                    top_pane_margin
+                } else {
+                    LOWER_PANE_MARGIN_PT * dpi_scale
+                };
 
-            const DOT_ALPHA: f32 = 0.5;
-            let dot_color = self.palette().cursor_bg.to_linear().mul_alpha(DOT_ALPHA);
+                const DOT_ALPHA: f32 = 0.5;
+                let dot_color = self.palette().cursor_bg.to_linear().mul_alpha(DOT_ALPHA);
 
-            self.poly_quad(
-                &mut layers,
-                2,
-                euclid::point2(dot_x - STATUS_DOT_SIZE - RIGHT_INSET, dot_y + margin_top),
-                CIRCLE_POLY,
-                1,
-                euclid::size2(STATUS_DOT_SIZE, STATUS_DOT_SIZE),
-                dot_color,
-            )
-            .context("active pane indicator")?;
+                self.poly_quad(
+                    &mut layers,
+                    2,
+                    euclid::point2(dot_x - indicator_size - RIGHT_INSET_PT * dpi_scale, dot_y + margin_top),
+                    CIRCLE_POLY,
+                    1,
+                    euclid::size2(indicator_size, indicator_size),
+                    dot_color,
+                )
+                .context("active pane indicator")?;
+            }
         }
 
         if let Some(pane) = self.get_active_pane_or_overlay() {
@@ -498,6 +621,93 @@ impl crate::TermWindow {
             for split in &splits {
                 self.paint_split(&mut layers, split, &splits, &pane)
                     .context("paint_split")?;
+            }
+
+            if matches!(
+                indicator_mode,
+                ActivePaneIndicator::Gutter | ActivePaneIndicator::Pill
+            ) {
+                if let Some((bounds, used_rows, total_rows)) = active_pane_indicator {
+                    const ACTIVE_PANE_INDICATOR_ALPHA: f32 = 0.9;
+                    let indicator_color = pane
+                        .palette()
+                        .cursor_bg
+                        .to_linear()
+                        .mul_alpha(ACTIVE_PANE_INDICATOR_ALPHA);
+                    let indicator_left_padding = ACTIVE_GUTTER_LEFT_PADDING_PT * dpi_scale;
+
+                    let segment = if indicator_mode == ActivePaneIndicator::Pill {
+                        active_pane_left_pill_segment(
+                            bounds,
+                            indicator_size,
+                            indicator_left_padding,
+                        )
+                    } else {
+                        active_pane_left_indicator_segment(
+                            bounds,
+                            indicator_size,
+                            indicator_left_padding,
+                            used_rows,
+                            total_rows,
+                        )
+                    };
+
+                    if let Some(indicator) = segment {
+                        let cap_diameter = indicator.width().min(indicator.height());
+                        let cap_radius = active_pane_gutter_radius(cap_diameter);
+
+                        if indicator.height() <= cap_diameter {
+                            self.poly_quad(
+                                &mut layers,
+                                2,
+                                euclid::point2(
+                                    indicator.min_x(),
+                                    indicator.min_y() + (indicator.height() - cap_diameter) / 2.0,
+                                ),
+                                CIRCLE_POLY,
+                                1,
+                                euclid::size2(cap_diameter, cap_diameter),
+                                indicator_color,
+                            )
+                            .context("active pane left indicator cap")?;
+                        } else {
+                            self.poly_quad(
+                                &mut layers,
+                                2,
+                                euclid::point2(indicator.min_x(), indicator.min_y()),
+                                CIRCLE_POLY,
+                                1,
+                                euclid::size2(cap_diameter, cap_diameter),
+                                indicator_color,
+                            )
+                            .context("active pane left indicator top cap")?;
+
+                            self.filled_rectangle(
+                                &mut layers,
+                                2,
+                                euclid::rect(
+                                    indicator.min_x(),
+                                    indicator.min_y() + cap_radius,
+                                    indicator.width(),
+                                    (indicator.height() - 2.0 * cap_radius).max(0.0),
+                                ),
+                                indicator_color,
+                            )
+                            .context("active pane left indicator body")?;
+
+                            self.poly_quad(
+                                &mut layers,
+                                2,
+                                euclid::point2(indicator.min_x(), indicator.max_y() - cap_diameter),
+                                CIRCLE_POLY,
+                                1,
+                                euclid::size2(cap_diameter, cap_diameter),
+                                indicator_color,
+                            )
+                            .context("active pane left indicator bottom cap")?;
+                        }
+                    }
+                }
             }
         }
 
@@ -561,7 +771,7 @@ impl crate::TermWindow {
         use crate::tabbar::TabBarItem;
 
         // Fast path: skip mux lock entirely if no panes have unread bells
-        if !self.config.bell_tab_indicator
+        if self.config.active_pane_indicator != ActivePaneIndicator::Bell
             || !self.pane_state.borrow().values().any(|s| s.has_unread_bell)
         {
             return Ok(());
@@ -604,7 +814,8 @@ impl crate::TermWindow {
             style: PolyStyle::Fill,
         }];
 
-        const DOT_RIGHT_MARGIN: f32 = 3.0;
+        const DOT_RIGHT_MARGIN_PT: f32 = 3.0;
+        let dot_size = active_pane_indicator_size_px(self.config.active_pane_indicator_size, self.dpi_scale());
 
         for ui_item in &self.ui_items {
             if let crate::termwindow::UIItemType::TabBar(TabBarItem::Tab {
@@ -614,10 +825,9 @@ impl crate::TermWindow {
             {
                 if tabs_with_bell.contains(tab_idx) {
                     // Draw dot at the right side of the tab, vertically centered
-                    let dot_x =
-                        (ui_item.x + ui_item.width) as f32 - STATUS_DOT_SIZE - DOT_RIGHT_MARGIN;
-                    let dot_y = ui_item.y as f32
-                        + ((ui_item.height as f32 - STATUS_DOT_SIZE) / 2.0).round();
+                    let dot_x = (ui_item.x + ui_item.width) as f32 - dot_size - DOT_RIGHT_MARGIN_PT * self.dpi_scale();
+                    let dot_y =
+                        ui_item.y as f32 + ((ui_item.height as f32 - dot_size) / 2.0).round();
 
                     self.poly_quad(
                         layers,
@@ -625,7 +835,7 @@ impl crate::TermWindow {
                         euclid::point2(dot_x, dot_y),
                         CIRCLE_POLY,
                         1,
-                        euclid::size2(STATUS_DOT_SIZE, STATUS_DOT_SIZE),
+                        euclid::size2(dot_size, dot_size),
                         notif_color,
                     )
                     .context("tab bell indicator")?;
@@ -768,7 +978,11 @@ impl crate::TermWindow {
 
 #[cfg(test)]
 mod tests {
-    use super::toast_colors_for_palette;
+    use super::{
+        active_pane_gutter_radius, active_pane_indicator_bounds, active_pane_indicator_size_px,
+        active_pane_left_indicator_segment, active_pane_left_pill_segment,
+        toast_colors_for_palette, transparent_strip_rects,
+    };
     use wezterm_term::color::{ColorPalette, SrgbaTuple};
     use window::color::LinearRgba;
 
@@ -802,5 +1016,103 @@ mod tests {
             LinearRgba(expected_bg.0, expected_bg.1, expected_bg.2, 0.9)
         );
         assert_eq!(text, LinearRgba(1.0, 1.0, 1.0, 1.0));
+    }
+
+    #[test]
+    fn left_indicator_tracks_used_rows_height() {
+        let bounds = euclid::rect(10.0, 20.0, 100.0, 50.0);
+        let indicator =
+            active_pane_left_indicator_segment(bounds, 8.0, 4.0, 10, 20).expect("indicator");
+
+        assert_eq!(indicator, euclid::rect(14.0, 20.0, 8.0, 25.0));
+    }
+
+    #[test]
+    fn left_indicator_extends_full_height_when_all_rows_used() {
+        let bounds = euclid::rect(10.0, 20.0, 100.0, 50.0);
+        let indicator =
+            active_pane_left_indicator_segment(bounds, 8.0, 4.0, 20, 20).expect("indicator");
+
+        assert_eq!(indicator, euclid::rect(14.0, 20.0, 8.0, 50.0));
+    }
+
+    #[test]
+    fn left_indicator_clamps_rows_and_handles_invalid_geometry() {
+        let bounds = euclid::rect(0.0, 0.0, 3.0, 40.0);
+        let indicator =
+            active_pane_left_indicator_segment(bounds, 8.0, 1.0, 99, 10).expect("indicator");
+
+        assert_eq!(indicator, euclid::rect(1.0, 0.0, 2.0, 40.0));
+
+        assert!(active_pane_left_indicator_segment(bounds, 2.0, 3.5, 1, 10).is_none());
+        assert!(active_pane_left_indicator_segment(bounds, 2.0, 1.0, 1, 0).is_none());
+    }
+
+    #[test]
+    fn gutter_radius_is_half_width() {
+        assert_eq!(active_pane_gutter_radius(8.0), 4.0);
+        assert_eq!(active_pane_gutter_radius(5.0), 2.5);
+    }
+
+    #[test]
+    fn indicator_bounds_include_split_gutter_for_non_leftmost_panes() {
+        let leftmost = active_pane_indicator_bounds(10.0, 20.0, 10.0, 20.0, 0, 0, 0, 10, 5, 8.0, 1.0);
+        let inner = active_pane_indicator_bounds(10.0, 20.0, 10.0, 20.0, 0, 12, 0, 10, 5, 8.0, 1.0);
+
+        // leftmost bounds: content_left(10) - (8.0 + 8.0 + 4.0) = -10
+        // width: 10*10 + 20 + 5.0 = 125
+        assert_eq!(leftmost, euclid::rect(-10.0, 20.0, 125.0, 100.0));
+        
+        // inner bounds: 10 + 120 - 5.0 = 125.0
+        // width: 10*10 + 5.0 + 5.0 = 110.0
+        assert_eq!(inner, euclid::rect(125.0, 20.0, 110.0, 100.0));
+    }
+
+    #[test]
+    fn indicator_size_px_has_minimum_of_one() {
+        // At 1x DPI scale
+        assert_eq!(active_pane_indicator_size_px(0, 1.0), 1.0);
+        assert_eq!(active_pane_indicator_size_px(1, 1.0), 1.0);
+        assert_eq!(active_pane_indicator_size_px(6, 1.0), 6.0);
+        // At 2x DPI scale (Retina)
+        assert_eq!(active_pane_indicator_size_px(0, 2.0), 2.0);
+        assert_eq!(active_pane_indicator_size_px(1, 2.0), 2.0);
+        assert_eq!(active_pane_indicator_size_px(6, 2.0), 12.0);
+    }
+
+    #[test]
+    fn pill_segment_is_centered_and_uses_15_percent_height() {
+        let bounds = euclid::rect(10.0, 20.0, 100.0, 200.0);
+        let pill = active_pane_left_pill_segment(bounds, 8.0, 4.0).expect("pill");
+
+        assert!((pill.width() - 8.0).abs() < 0.001);
+        assert!((pill.height() - 30.0).abs() < 0.001);
+        assert!((pill.min_x() - 14.0).abs() < 0.001);
+        assert!((pill.min_y() - 105.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn transparent_strip_rects_exclude_tab_bar_regions() {
+        let (top, bottom, right) =
+            transparent_strip_rects(500.0, 300.0, 20.0, 10.0, 12.0, 24.0, 30.0);
+
+        let top = top.expect("top");
+        let bottom = bottom.expect("bottom");
+        let right = right.expect("right");
+
+        assert!((top.height() - 20.0).abs() < 0.001);
+        assert!((right.min_y() - 44.0).abs() < 0.001);
+        assert!((right.max_y() - (300.0 - 10.0 - 30.0)).abs() < 0.001);
+        assert!(right.min_y() >= top.max_y());
+        assert!(right.max_y() <= bottom.min_y());
+    }
+
+    #[test]
+    fn transparent_strip_rects_skip_zero_sized_strips() {
+        let (top, bottom, right) = transparent_strip_rects(500.0, 300.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+
+        assert!(top.is_none());
+        assert!(bottom.is_none());
+        assert!(right.is_none());
     }
 }

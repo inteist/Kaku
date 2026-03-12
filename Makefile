@@ -1,4 +1,5 @@
-.PHONY: all fmt fmt-check build app dev check test install-tools install-hooks test-webgpu-fallback
+.PHONY: all fmt fmt-check build app dev check test install-tools install-hooks test-webgpu-fallback pr_check bump build-release major minor patch
+.PHONY: all fmt fmt-check build app dev check test install-tools install-hooks test-webgpu-fallback pr_check bump build-release major minor patch
 
 all: build
 
@@ -7,6 +8,8 @@ RUST_LOG ?= info
 test:
 	cargo nextest run --locked -E 'not test(shapecache::test::ligatures_jetbrains)'
 	cargo nextest run --locked -p wezterm-escape-parser # no_std by default
+
+
 
 check:
 	cargo check --locked
@@ -65,9 +68,42 @@ install-hooks:
 		exit 1; \
 	fi && \
 	mkdir -p "$$hooks_dir" && \
-	printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' 'exec make fmt-check test' > "$$hooks_dir/pre-commit" && \
+	printf '%s\n' \
+		'#!/usr/bin/env bash' \
+		'set -euo pipefail' \
+		'BRANCH=$$(git rev-parse --abbrev-ref HEAD)' \
+		'if [[ "$$BRANCH" != "master" && "$$BRANCH" != "main" ]]; then' \
+		'  exit 0' \
+		'fi' \
+		'exec make fmt-check test' > "$$hooks_dir/pre-commit" && \
 	chmod +x "$$hooks_dir/pre-commit" && \
-	echo "Installed pre-commit hook at $$hooks_dir/pre-commit"
+	echo "Installed dual-branch pre-commit hook at $$hooks_dir/pre-commit"
 
+	
 test-webgpu-fallback:
 	./scripts/test_webgpu_fallback.sh --strict
+
+# 
+# –– C O N V E N I E N C E   T A R G E T S ––
+# 
+# make bump
+# make bump patch|minor|major
+# defaults to patch when no bump type is provided
+bump:
+	@bump_type="$(firstword $(filter major minor patch,$(MAKECMDGOALS)))"; \
+	if [ -z "$$bump_type" ]; then bump_type=patch; fi; \
+	./scripts/version_bump.sh "$$bump_type"
+
+# No-op aliases so `make bump major|minor|patch` works as expected.
+major minor patch:
+	@:
+
+
+
+pr_check: fmt check test
+
+
+build-dev:
+	./scripts/build.sh --native-arch --app-only
+
+

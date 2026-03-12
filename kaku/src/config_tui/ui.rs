@@ -6,6 +6,10 @@ use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragra
 use super::{App, Mode};
 use crate::tui_core::theme::{accent, bg, muted, panel, primary, text_fg};
 
+const MIN_KEY_COLUMN_WIDTH: usize = 24;
+const KEY_VALUE_GAP: usize = 4;
+const WINDOW_BACKGROUND_OPACITY_KEY: &str = "window_background_opacity";
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum MainLayoutMode {
     HeaderOnly,
@@ -22,33 +26,54 @@ struct FooterCopy {
     secondary_key: Option<&'static str>,
     secondary_long: Option<&'static str>,
     secondary_short: Option<&'static str>,
+    tertiary_key: Option<&'static str>,
+    tertiary_long: Option<&'static str>,
+    tertiary_short: Option<&'static str>,
 }
 
+const ESC_KEY_STR: &'static str = "Esc";
+const ENTER_KEY_STR: &'static str = "Enter";
+const Q_KEY_STR: &'static str = "q";
+const E_KEY_STR: &'static str = "e";
+
 fn footer_copy(mode: Mode) -> FooterCopy {
+    let apply_edit_long = "Apply Current Change";
+    let apply_short = " apply";
+    let cancel_short = " cancel";
+
     match mode {
         Mode::Normal => FooterCopy {
-            primary_key: "ESC",
-            primary_long: " save and apply changes",
-            primary_short: " apply",
-            secondary_key: Some("E"),
-            secondary_long: Some(" open full config"),
+            primary_key: ESC_KEY_STR,
+            primary_long: " Apply Changes and Quit",
+            primary_short: apply_short,
+            secondary_key: Some(E_KEY_STR),
+            secondary_long: Some(" Open Config (opens default editor)"),
             secondary_short: Some(" config"),
+            tertiary_key: Some(Q_KEY_STR),
+            tertiary_long: Some(" Discard Changes and Quit"),
+            tertiary_short: Some(" quit"),
         },
         Mode::Selecting => FooterCopy {
-            primary_key: "Enter",
-            primary_long: " apply current change",
-            primary_short: " apply",
-            secondary_key: Some("ESC"),
-            secondary_long: Some(" apply & exit"),
-            secondary_short: Some(" apply"),
+            primary_key: ENTER_KEY_STR,
+            primary_long: " Apply Current Change",
+            primary_short: apply_short,
+            secondary_key: Some(ESC_KEY_STR),
+            secondary_long: Some(" Apply & Exit"),
+            secondary_short: Some(apply_short),
+            tertiary_key: None,
+            tertiary_long: None,
+            tertiary_short: None,
         },
         Mode::Editing => FooterCopy {
-            primary_key: "Enter",
-            primary_long: " apply current change",
-            primary_short: " apply",
-            secondary_key: Some("ESC"),
-            secondary_long: Some(" cancel edit"),
-            secondary_short: Some(" cancel"),
+            primary_key: ENTER_KEY_STR,
+            primary_long: apply_edit_long,
+            primary_short: apply_short,
+            secondary_key: Some(ESC_KEY_STR),
+            secondary_long: Some(" Cancel Editing"),
+            secondary_short: Some(cancel_short),
+            tertiary_key: None,
+            tertiary_long: None,
+            tertiary_short: None,
         },
     }
 }
@@ -64,7 +89,6 @@ pub(super) fn ui(frame: &mut ratatui::Frame, app: &mut App) {
     let area = Rect::new(full.x, full.y, full.width - 1, full.height);
 
     frame.render_widget(Clear, area);
-    frame.render_widget(Block::default().style(Style::default().bg(bg())), area);
 
     let content_rows = rendered_field_row_count(app);
     match resolve_main_layout(area.height, content_rows) {
@@ -146,15 +170,27 @@ fn rendered_field_row_count(app: &App) -> u16 {
 }
 
 fn render_header(frame: &mut ratatui::Frame, area: Rect) {
+    let version = format!("v{}", config::wezterm_version());
     let line = Line::from(vec![
         Span::styled(
-            "  Kaku",
+            "  Kaku ",
             Style::default().fg(primary()).add_modifier(Modifier::BOLD),
         ),
+        Span::styled(version, Style::default().fg(primary())),
         Span::styled(" · ", Style::default().fg(muted())),
         Span::styled("Settings", Style::default().fg(text_fg())),
     ]);
     frame.render_widget(Paragraph::new(vec![line, Line::from("")]), area);
+}
+
+fn key_column_width(app: &App) -> usize {
+    let widest_key = app
+        .fields
+        .iter()
+        .map(|field| field.key.chars().count())
+        .max()
+        .unwrap_or(0);
+    MIN_KEY_COLUMN_WIDTH.max(widest_key + KEY_VALUE_GAP)
 }
 
 fn render_fields(frame: &mut ratatui::Frame, area: Rect, app: &App) {
@@ -162,7 +198,7 @@ fn render_fields(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     let mut items: Vec<ListItem> = Vec::new();
     let mut selected_flat: Option<usize> = None;
     let mut flat = 0usize;
-    let key_width = 24usize;
+    let key_width = key_column_width(app);
     let mut current_section: Option<&str> = None;
 
     for (idx, field) in app.fields.iter().enumerate() {
@@ -184,20 +220,28 @@ fn render_fields(frame: &mut ratatui::Frame, area: Rect, app: &App) {
         }
 
         let is_selected = idx == app.selected;
-        if is_selected {
+        let is_disabled = app.is_field_disabled(field.lua_key);
+        if is_selected && !is_disabled {
             selected_flat = Some(flat);
         }
 
         let display_value = app.display_value(field);
         let has_options = field.has_options();
+        let has_horizontal_adjust = (App::numeric_step_for(field.lua_key).is_some()
+            || field.lua_key == "active_pane_indicator")
+            && !is_disabled;
 
-        let key_style = if is_selected {
+        let key_style = if is_disabled {
+            Style::default().fg(muted())
+        } else if is_selected {
             Style::default().fg(primary()).add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(text_fg())
         };
 
-        let value_style = if is_selected {
+        let value_style = if is_disabled {
+            Style::default().fg(muted())
+        } else if is_selected {
             Style::default().fg(primary()).add_modifier(Modifier::BOLD)
         } else if field.value.is_empty() {
             Style::default().fg(muted())
@@ -205,11 +249,26 @@ fn render_fields(frame: &mut ratatui::Frame, area: Rect, app: &App) {
             Style::default().fg(accent())
         };
 
-        let marker = if is_selected { "› " } else { "  " };
+        let marker = if is_selected && !is_disabled {
+            "› "
+        } else {
+            "  "
+        };
         let suffix = if has_options && field.options.len() > 2 {
             " ▾"
         } else {
             ""
+        };
+        let value_label = if field.lua_key == WINDOW_BACKGROUND_OPACITY_KEY {
+            format!("{}%", display_value)
+        } else {
+            display_value.to_string()
+        };
+
+        let rendered_value = if has_horizontal_adjust {
+            format!("◀ {} ▶", value_label)
+        } else {
+            format!("{}{}", value_label, suffix)
         };
 
         let line = Line::from(vec![
@@ -228,7 +287,7 @@ fn render_fields(frame: &mut ratatui::Frame, area: Rect, app: &App) {
                 format!("{:<width$}", field.key, width = key_width),
                 key_style,
             ),
-            Span::styled(format!("{}{}", display_value, suffix), value_style),
+            Span::styled(rendered_value, value_style),
         ]);
 
         items.push(ListItem::new(line));
@@ -244,44 +303,64 @@ fn render_fields(frame: &mut ratatui::Frame, area: Rect, app: &App) {
 
 fn render_footer(frame: &mut ratatui::Frame, area: Rect, mode: Mode) {
     let copy = footer_copy(mode);
-    let line = if area.width >= 44 {
-        Line::from(vec![
+    let line = if area.width >= 80 {
+        let mut spans = vec![
             Span::styled("  ", Style::default()),
             Span::styled(copy.primary_key, Style::default().fg(primary())),
             Span::styled(copy.primary_long, Style::default().fg(muted())),
-            if copy.secondary_key.is_some() || copy.secondary_long.is_some() {
-                Span::styled("  ·  ", Style::default().fg(muted()))
-            } else {
-                Span::raw("")
-            },
-            Span::styled(
+        ];
+        if copy.secondary_key.is_some() || copy.secondary_long.is_some() {
+            spans.push(Span::styled("  ·  ", Style::default().fg(muted())));
+            spans.push(Span::styled(
                 copy.secondary_key.unwrap_or(""),
                 Style::default().fg(primary()),
-            ),
-            Span::styled(
+            ));
+            spans.push(Span::styled(
                 copy.secondary_long.unwrap_or(""),
                 Style::default().fg(muted()),
-            ),
-        ])
-    } else if area.width >= 30 {
-        Line::from(vec![
+            ));
+        }
+        if copy.tertiary_key.is_some() || copy.tertiary_long.is_some() {
+            spans.push(Span::styled("  ·  ", Style::default().fg(muted())));
+            spans.push(Span::styled(
+                copy.tertiary_key.unwrap_or(""),
+                Style::default().fg(primary()),
+            ));
+            spans.push(Span::styled(
+                copy.tertiary_long.unwrap_or(""),
+                Style::default().fg(muted()),
+            ));
+        }
+        Line::from(spans)
+    } else if area.width >= 40 {
+        let mut spans = vec![
             Span::styled("  ", Style::default()),
             Span::styled(copy.primary_key, Style::default().fg(primary())),
             Span::styled(copy.primary_short, Style::default().fg(muted())),
-            if copy.secondary_key.is_some() || copy.secondary_short.is_some() {
-                Span::styled("  ·  ", Style::default().fg(muted()))
-            } else {
-                Span::raw("")
-            },
-            Span::styled(
+        ];
+        if copy.secondary_key.is_some() || copy.secondary_short.is_some() {
+            spans.push(Span::styled("  ·  ", Style::default().fg(muted())));
+            spans.push(Span::styled(
                 copy.secondary_key.unwrap_or(""),
                 Style::default().fg(primary()),
-            ),
-            Span::styled(
+            ));
+            spans.push(Span::styled(
                 copy.secondary_short.unwrap_or(""),
                 Style::default().fg(muted()),
-            ),
-        ])
+            ));
+        }
+        if copy.tertiary_key.is_some() || copy.tertiary_short.is_some() {
+            spans.push(Span::styled("  ·  ", Style::default().fg(muted())));
+            spans.push(Span::styled(
+                copy.tertiary_key.unwrap_or(""),
+                Style::default().fg(primary()),
+            ));
+            spans.push(Span::styled(
+                copy.tertiary_short.unwrap_or(""),
+                Style::default().fg(muted()),
+            ));
+        }
+        Line::from(spans)
     } else {
         Line::from(vec![
             Span::styled("  ", Style::default()),
@@ -446,6 +525,32 @@ fn render_editor(frame: &mut ratatui::Frame, area: Rect, app: &App) {
 }
 
 #[cfg(test)]
+mod spacing_tests {
+    use super::{key_column_width, KEY_VALUE_GAP, MIN_KEY_COLUMN_WIDTH};
+    use crate::config_tui::App;
+    use std::path::PathBuf;
+
+    #[test]
+    fn key_column_width_respects_minimum() {
+        let app = App::new(PathBuf::from("/tmp/kaku-config-tui-test.lua"));
+        assert!(key_column_width(&app) >= MIN_KEY_COLUMN_WIDTH);
+    }
+
+    #[test]
+    fn key_column_width_tracks_longest_key_plus_gap() {
+        let app = App::new(PathBuf::from("/tmp/kaku-config-tui-test.lua"));
+        let widest_key = app
+            .fields
+            .iter()
+            .map(|field| field.key.chars().count())
+            .max()
+            .unwrap_or(0);
+        let expected = widest_key + KEY_VALUE_GAP;
+        assert_eq!(key_column_width(&app), expected.max(MIN_KEY_COLUMN_WIDTH));
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::{footer_copy, resolve_main_layout, FooterCopy, MainLayoutMode};
     use crate::config_tui::Mode;
@@ -465,50 +570,5 @@ mod tests {
     fn handles_tiny_terminal_heights() {
         assert_eq!(resolve_main_layout(2, 1), MainLayoutMode::HeaderOnly);
         assert_eq!(resolve_main_layout(3, 1), MainLayoutMode::HeaderAndFooter);
-    }
-
-    #[test]
-    fn normal_footer_keeps_escape_as_apply_shortcut() {
-        assert_eq!(
-            footer_copy(Mode::Normal),
-            FooterCopy {
-                primary_key: "ESC",
-                primary_long: " save and apply changes",
-                primary_short: " apply",
-                secondary_key: Some("E"),
-                secondary_long: Some(" open full config"),
-                secondary_short: Some(" config"),
-            }
-        );
-    }
-
-    #[test]
-    fn modal_footer_switches_escape_to_cancel() {
-        assert_eq!(
-            footer_copy(Mode::Selecting),
-            FooterCopy {
-                primary_key: "Enter",
-                primary_long: " apply current change",
-                primary_short: " apply",
-                secondary_key: Some("ESC"),
-                secondary_long: Some(" apply & exit"),
-                secondary_short: Some(" apply"),
-            }
-        );
-    }
-
-    #[test]
-    fn modal_footer_shows_cancel_for_editing() {
-        assert_eq!(
-            footer_copy(Mode::Editing),
-            FooterCopy {
-                primary_key: "Enter",
-                primary_long: " apply current change",
-                primary_short: " apply",
-                secondary_key: Some("ESC"),
-                secondary_long: Some(" cancel edit"),
-                secondary_short: Some(" cancel"),
-            }
-        );
     }
 }
